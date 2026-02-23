@@ -1,0 +1,3021 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>簡易問卷生成工具</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- PDF Generation Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- SheetJS (XLSX) Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <style>
+        /* Noto Sans TC Setup */
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+        }
+
+        /* Loading Spinner */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Modal Transitions */
+        .modal {
+            transition: opacity 0.25s ease;
+        }
+
+        body.modal-active {
+            overflow-x: hidden;
+            overflow-y: visible !important;
+        }
+
+        /* Print/PDF Specifics */
+        .pdf-page {
+            width: 210mm;
+            min-height: 297mm;
+            padding: 20mm;
+            background: white;
+            margin: 0 auto;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+
+        .pdf-visible {
+            display: block;
+        }
+        
+        /* Toggle Switch */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #68D391;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #68D391;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <!-- Config Area (Hardcoded URL) -->
+    <script>
+        // -------------------------------------------------------------
+        // 使用者設定區：如果您想固定 GAS 網址，請填入下方引號中
+        // -------------------------------------------------------------
+        const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbwdKkIo24n0JzBI97AMuwu5rX7bR-b7-PNEm6iydTuONKPvUynvWqozbmMUOHmsM217TA/exec";
+        // -------------------------------------------------------------
+    </script>
+
+    <!-- Navbar -->
+    <nav class="bg-white shadow-sm border-b border-slate-200 sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center cursor-pointer" onclick="app.router('home')">
+                    <i class="fa-solid fa-poll-h text-blue-600 text-2xl mr-2"></i>
+                    <span class="font-bold text-xl tracking-tight text-slate-700">簡易問卷生成工具</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button onclick="app.ctrl.checkAuthAndRedirect('manage')"
+                        class="text-slate-500 hover:text-blue-600 transition p-2 flex items-center gap-2" title="問卷管理">
+                        <i class="fa-solid fa-list-check text-xl"></i>
+                        <span class="hidden md:inline text-sm font-bold">管理後台</span>
+                    </button>
+                    <button onclick="app.ui.openHelp()" class="text-slate-500 hover:text-blue-600 transition p-2"
+                        title="說明與部署代碼">
+                        <i class="fa-solid fa-circle-info text-xl"></i>
+                    </button>
+                    <button onclick="app.ui.openSettings()" class="text-slate-500 hover:text-blue-600 transition p-2"
+                        title="設定連線">
+                        <i class="fa-solid fa-gear text-xl"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main id="main-container" class="flex-grow max-w-7xl mx-auto px-4 py-8 w-full relative">
+        <!-- Views will be injected here -->
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-slate-800 text-slate-300 py-6 mt-auto">
+        <div class="text-center text-sm">
+            <p>&copy; 2026 簡易問卷生成工具. Made by <a href="https://kentxchang.blogspot.tw" target="_blank" class="text-blue-400 hover:text-blue-300 underline font-bold transition">阿剛老師</a>.</p>
+            <p class="mt-2 text-xs text-slate-500">
+                本作品採用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh_TW" target="_blank" class="hover:text-slate-400 underline">創用 CC 姓名標示-非商業性-相同方式分享 4.0 國際 授權條款</a> 授權
+            </p>
+        </div>
+    </footer>
+
+    <!-- ================= MODALS ================= -->
+
+    <!-- 1. Settings Modal -->
+    <div id="settings-modal"
+        class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+        <div class="modal-overlay absolute w-full h-full bg-gray-900 opacity-50"></div>
+        <div class="modal-container bg-white w-11/12 md:max-w-md mx-auto rounded shadow-lg z-50 overflow-y-auto">
+            <div class="modal-content py-4 text-left px-6">
+                <div class="flex justify-between items-center pb-3">
+                    <p class="text-2xl font-bold text-slate-700">系統設定</p>
+                    <div class="modal-close cursor-pointer z-50" onclick="app.ui.closeSettings()">
+                        <i class="fas fa-times"></i>
+                    </div>
+                </div>
+
+                <div class="my-5">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">GAS Web App URL</label>
+                    <input type="password" id="gas-url-input"
+                        class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                        placeholder="https://script.google.com/macros/s/..." autocomplete="off">
+                    <p class="text-xs text-gray-500 mt-1">請輸入您部署後的 Google Apps Script 網址。</p>
+                </div>
+
+                <div class="my-5">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Gemini API Key (選填)</label>
+                    <input type="password" id="gemini-key-input"
+                        class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                        placeholder="AI Studio API Key">
+                    <p class="text-xs text-gray-500 mt-1">若為空，系統將嘗試使用 Canvas 免 Key 環境模式。</p>
+                </div>
+
+                <!-- Sharing Section -->
+                <div id="share-config-section" class="my-5 pt-4 border-t border-gray-200 hidden">
+                    <h4 class="font-bold text-gray-700 mb-2">分享設定 (Config Link)</h4>
+                    <p class="text-xs text-gray-500 mb-2">生成包含加密 GAS URL 的連結，方便分發給填答者。</p>
+                    <button onclick="app.config.generateShareLink()"
+                        class="bg-indigo-500 hover:bg-indigo-700 text-white text-xs font-bold py-1 px-3 rounded">
+                        產生分享連結與 QR Code
+                    </button>
+                    <div id="qr-result" class="mt-3 hidden text-center">
+                        <div id="short-url-display" class="text-xs bg-gray-100 p-2 rounded break-all mb-2 select-all">
+                        </div>
+                        <img id="qr-image" class="mx-auto border p-1" src="" alt="QR Code">
+                    </div>
+                </div>
+
+                <div class="flex justify-between pt-2">
+                    <button onclick="app.config.clearSettings()"
+                        class="px-4 py-2 bg-red-100 text-red-600 rounded hover:bg-red-200 text-sm font-bold transition">重置設定</button>
+                    <button onclick="app.config.saveSettings()"
+                        class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold shadow-lg transition">儲存連線</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. Help/Code Modal -->
+    <div id="help-modal"
+        class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+        <div class="modal-overlay absolute w-full h-full bg-gray-900 opacity-50"></div>
+        <div
+            class="modal-container bg-white w-11/12 md:max-w-3xl mx-auto rounded shadow-lg z-50 overflow-y-auto h-[90vh]">
+            <div class="modal-content py-4 text-left px-6">
+                <div class="flex justify-between items-center pb-3 border-b">
+                    <p class="text-2xl font-bold">後端部署教學</p>
+                    <button onclick="app.ui.closeHelp()" class="text-gray-500 hover:text-black"><i
+                            class="fas fa-times fa-lg"></i></button>
+                </div>
+                <div class="prose max-w-none py-4 text-sm">
+                    <h3 class="font-bold text-lg">步驟 1: 建立 Google Apps Script</h3>
+                    <p>前往 <a href="https://script.google.com/start" target="_blank"
+                            class="text-blue-600 underline">script.google.com</a> 建立新專案。</p>
+
+                    <h3 class="font-bold text-lg mt-4 flex items-center justify-between">
+                        步驟 2: 貼上後端程式碼
+                        <button onclick="app.utils.copyCode()"
+                            class="bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs py-1 px-3 rounded transition"><i
+                                class="far fa-copy"></i> 複製代碼</button>
+                    </h3>
+                    <div class="relative mt-2">
+                        <pre id="gas-code-block"
+                            class="bg-gray-800 text-green-400 p-4 rounded overflow-auto h-64 text-xs font-mono select-all">
+/**
+ * 這裡會顯示完整的 Code.gs 內容，請由下方 JS 動態注入
+ */
+                        </pre>
+                    </div>
+
+                    <h3 class="font-bold text-lg mt-4">步驟 3: 部署為 Web App（首次部署）</h3>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li>點擊右上角 <b>[部署]</b> > <b>[新增部署作業]</b>。</li>
+                        <li>齒輪圖示選擇 <b>[網頁應用程式]</b>。</li>
+                        <li><b>執行身分</b>：選擇 <b>[我 (Me)]</b>。</li>
+                        <li><b>誰可以存取</b>：務必選擇 <b>[任何人 (Anyone)]</b> ⚠️ 這點最重要！</li>
+                        <li>點擊 [部署]，授權存取權限。</li>
+                        <li>複製 <b>網頁應用程式網址</b> 並貼回本網頁的設定中。</li>
+                    </ul>
+
+                    <h3 class="font-bold text-lg mt-4 text-orange-600">⚠️ 更新現有部署（重要）</h3>
+                    <div class="bg-orange-50 border-l-4 border-orange-500 p-3 mb-2">
+                        <p class="font-semibold mb-2">如果您之前已經部署過，更新程式碼後需要：</p>
+                        <ol class="list-decimal pl-5 space-y-1">
+                            <li>貼上新版程式碼覆蓋舊程式碼</li>
+                            <li>點擊 <b>[部署]</b> > <b>[管理部署作業]</b></li>
+                            <li>找到現有部署，點擊右側「編輯」（鉛筆圖示）</li>
+                            <li>版本選擇 <b>[新版本]</b></li>
+                            <li>點擊 <b>[部署]</b></li>
+                            <li>✅ URL 不變，但功能已更新！</li>
+                        </ol>
+                    </div>
+
+                    <h3 class="font-bold text-lg mt-4 text-green-600">✨ 最新功能（v2.0）</h3>
+                    <div class="bg-green-50 border-l-4 border-green-500 p-3">
+                        <ul class="list-disc pl-5 space-y-1">
+                            <li><b>問卷到期時間</b>：設定截止日期，過期自動隱藏</li>
+                            <li><b>回應份數限制</b>：設定收回上限，達標自動隱藏</li>
+                            <li><b>複製問卷功能</b>：一鍵複製整份問卷（含所有設定）</li>
+                            <li><b>載入動畫提示</b>：操作時顯示載入狀態</li>
+                            <li><b>PDF 自訂下載</b>：可選擇下載內容及版面配置</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Generic Alert Modal -->
+    <div id="alert-modal"
+        class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+        <div class="modal-overlay absolute w-full h-full bg-black opacity-30"></div>
+        <div
+            class="modal-container bg-white w-11/12 md:max-w-sm mx-auto rounded shadow-xl z-50 overflow-hidden transform transition-all scale-95">
+            <div class="px-6 py-4">
+                <div class="flex items-center justify-center w-12 h-12 mx-auto bg-blue-100 rounded-full mb-4"
+                    id="alert-icon-bg">
+                    <i id="alert-icon" class="fas fa-info text-blue-600 text-xl"></i>
+                </div>
+                <div class="text-center">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900" id="alert-title">提示</h3>
+                    <div class="mt-2">
+                        <p class="text-sm text-gray-500" id="alert-message">訊息內容</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse justify-center">
+                <button type="button" onclick="app.ui.closeAlert()"
+                    class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none sm:w-auto sm:text-sm">
+                    確定
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Confirm Modal -->
+    <div id="confirm-modal"
+        class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+        <div class="modal-overlay absolute w-full h-full bg-black opacity-30"></div>
+        <div
+            class="modal-container bg-white w-11/12 md:max-w-sm mx-auto rounded shadow-xl z-50 overflow-hidden transform transition-all scale-95">
+            <div class="px-6 py-4">
+                <div class="flex items-center justify-center w-12 h-12 mx-auto bg-red-100 rounded-full mb-4">
+                    <i class="fas fa-exclamation-triangle text-red-600 text-xl"></i>
+                </div>
+                <div class="text-center">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900" id="confirm-title">確認</h3>
+                    <div class="mt-2">
+                        <p class="text-sm text-gray-500" id="confirm-message">確定要執行嗎？</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse justify-center gap-2">
+                <button type="button" id="confirm-yes-btn"
+                    class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none sm:w-auto sm:text-sm">
+                    確定刪除
+                </button>
+                <button type="button" id="confirm-no-btn"
+                    class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:w-auto sm:text-sm">
+                    取消
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. Share Survey Modal -->
+    <div id="share-survey-modal"
+        class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+        <div class="modal-overlay absolute w-full h-full bg-gray-900 opacity-50"></div>
+        <div class="modal-container bg-white w-11/12 md:max-w-md mx-auto rounded shadow-lg z-50 overflow-y-auto">
+            <div class="modal-content py-4 text-left px-6">
+                <div class="flex justify-between items-center pb-3 border-b mb-4">
+                    <p class="text-2xl font-bold text-slate-700">問卷分享連結</p>
+                    <div class="cursor-pointer" onclick="document.getElementById('share-survey-modal').classList.add('opacity-0', 'pointer-events-none')">
+                        <i class="fas fa-times"></i>
+                    </div>
+                </div>
+                
+                <div class="text-center">
+                    <p class="text-sm text-gray-500 mb-2">掃描 QR Code 或複製網址分享問卷</p>
+                    <div class="bg-gray-50 p-2 rounded inline-block border mb-4">
+                        <img id="share-qr-img" class="w-48 h-48" src="" alt="QR Code">
+                    </div>
+                    
+                    <div class="mb-4 text-left">
+                        <label class="block text-gray-700 text-xs font-bold mb-1">問卷網址</label>
+                        <div class="flex">
+                            <input type="text" id="share-url-input" class="text-xs bg-gray-100 border rounded-l w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none" readonly>
+                            <button onclick="app.utils.copyShareUrl()" class="bg-blue-500 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded-r whitespace-nowrap">
+                                複製
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                        <i class="fas fa-info-circle mr-1"></i> ID: <span id="share-survey-id" class="font-bold"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. Image Preview Modal -->
+    <div id="image-preview-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-[100]">
+        <div class="modal-overlay absolute w-full h-full bg-black opacity-80 cursor-pointer" onclick="app.ui.closeImagePreview()"></div>
+        <div class="modal-container bg-transparent w-full h-full flex items-center justify-center p-4 relative pointer-events-none">
+            <div class="relative pointer-events-auto max-w-full max-h-full">
+                <button onclick="app.ui.closeImagePreview()" class="absolute -top-10 right-0 text-white text-2xl hover:text-gray-300 focus:outline-none">
+                    <i class="fas fa-times"></i>
+                </button>
+                <img id="preview-image-element" src="" class="max-w-full max-h-[90vh] object-contain rounded shadow-2xl" alt="Full size preview">
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. Login Modal -->
+    <div id="login-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+        <div class="modal-overlay absolute w-full h-full bg-gray-900 opacity-50"></div>
+        <div class="modal-container bg-white w-11/12 md:max-w-sm mx-auto rounded shadow-lg z-50 overflow-y-auto">
+            <div class="modal-content py-4 text-left px-6">
+                <div class="flex justify-between items-center pb-3">
+                    <p class="text-2xl font-bold text-slate-700">管理員登入</p>
+                    <div class="modal-close cursor-pointer z-50" onclick="app.ui.closeLogin()">
+                        <i class="fas fa-times"></i>
+                    </div>
+                </div>
+                <div class="my-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">請輸入密碼 (預設: tpet)</label>
+                    <input type="password" id="admin-password-input" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" onkeydown="if(event.key === 'Enter') app.auth.login()">
+                </div>
+                <div class="flex justify-end pt-2">
+                    <button onclick="app.auth.login()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold shadow-lg transition">驗證</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 8. Global Loading Overlay -->
+    <div id="loading-overlay" class="hidden fixed w-full h-full top-0 left-0 z-[100] flex items-center justify-center bg-black bg-opacity-50">
+        <div class="bg-white rounded-lg shadow-2xl p-8 flex flex-col items-center max-w-sm">
+            <div class="loader mb-4"></div>
+            <p id="loading-message" class="text-slate-700 font-semibold text-center">處理中，請稍候...</p>
+            <p class="text-slate-500 text-sm text-center mt-2">系統正在與伺服器通訊</p>
+        </div>
+    </div>
+
+    <!-- 9. PDF Download Options Modal -->
+    <div id="pdf-options-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+        <div class="modal-overlay absolute w-full h-full bg-gray-900 opacity-50"></div>
+        <div class="modal-container bg-white w-11/12 md:max-w-lg mx-auto rounded shadow-lg z-50 overflow-y-auto">
+            <div class="modal-content py-4 text-left px-6">
+                <div class="flex justify-between items-center pb-3 border-b mb-4">
+                    <p class="text-xl font-bold text-slate-700">選擇要下載的 PDF 內容</p>
+                    <div class="cursor-pointer" onclick="app.ui.closePdfOptions()">
+                        <i class="fas fa-times"></i>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <p class="text-sm text-gray-600 mb-3">請勾選要包含在 PDF 報告中的區塊：</p>
+                    <div class="space-y-3">
+                        <label class="flex items-center p-3 bg-gray-50 rounded hover:bg-gray-100 cursor-pointer">
+                            <input type="checkbox" id="pdf-option-header" checked class="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                            <div>
+                                <div class="font-semibold text-sm text-gray-800">標題與基本資訊</div>
+                                <div class="text-xs text-gray-500">問卷標題、建立時間等基本資訊</div>
+                            </div>
+                        </label>
+
+                        <label class="flex items-center p-3 bg-gray-50 rounded hover:bg-gray-100 cursor-pointer">
+                            <input type="checkbox" id="pdf-option-stats" checked class="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                            <div>
+                                <div class="font-semibold text-sm text-gray-800">統計概覽</div>
+                                <div class="text-xs text-gray-500">回應數量、完成率等統計資料</div>
+                            </div>
+                        </label>
+
+                        <label class="flex items-center p-3 bg-gray-50 rounded hover:bg-gray-100 cursor-pointer">
+                            <input type="checkbox" id="pdf-option-responses" checked class="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                            <div>
+                                <div class="font-semibold text-sm text-gray-800">回應列表</div>
+                                <div class="text-xs text-gray-500">所有回應的詳細內容列表</div>
+                            </div>
+                        </label>
+
+                        <label class="flex items-center p-3 bg-gray-50 rounded hover:bg-gray-100 cursor-pointer">
+                            <input type="checkbox" id="pdf-option-charts" checked class="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                            <div>
+                                <div class="font-semibold text-sm text-gray-800">統計圖表</div>
+                                <div class="text-xs text-gray-500">各題目的統計圖表與分析</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Layout Options -->
+                <div class="mb-4 pt-4 border-t">
+                    <p class="text-sm text-gray-700 font-semibold mb-3">回應內容版面配置：</p>
+                    <div class="space-y-2">
+                        <label class="flex items-center p-3 bg-gray-50 rounded hover:bg-gray-100 cursor-pointer border-2 border-transparent has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
+                            <input type="radio" name="pdf-layout" id="pdf-layout-single" value="single" checked class="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500">
+                            <div class="flex-1">
+                                <div class="font-semibold text-sm text-gray-800">一欄式版面</div>
+                                <div class="text-xs text-gray-500">每個回應佔滿整頁寬度，適合內容較多的回應</div>
+                            </div>
+                            <div class="ml-2 text-gray-400">
+                                <i class="fas fa-align-justify"></i>
+                            </div>
+                        </label>
+
+                        <label class="flex items-center p-3 bg-gray-50 rounded hover:bg-gray-100 cursor-pointer border-2 border-transparent has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
+                            <input type="radio" name="pdf-layout" id="pdf-layout-double" value="double" class="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500">
+                            <div class="flex-1">
+                                <div class="font-semibold text-sm text-gray-800">二欄式版面</div>
+                                <div class="text-xs text-gray-500">回應並排顯示，適合回應數量多且內容較少的情況</div>
+                            </div>
+                            <div class="ml-2 text-gray-400">
+                                <i class="fas fa-columns"></i>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-4 border-t">
+                    <button onclick="app.ui.closePdfOptions()" class="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition">
+                        取消
+                    </button>
+                    <button onclick="app.report.generateCustomPDF()" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition flex items-center">
+                        <i class="fas fa-file-pdf mr-2"></i>下載 PDF
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= TEMPLATES (Views) ================= -->
+
+    <!-- VIEW: Home (Dashboard) -->
+    <template id="view-home">
+        <div class="text-center py-20 animate-fade-in">
+            <h1 class="text-4xl font-extrabold text-slate-900 mb-4">歡迎使用 簡易問卷生成工具</h1>
+            <p class="text-lg text-slate-600 mb-8 max-w-2xl mx-auto">
+                專業的問卷生成、數據收集與報告平台。<br>整合 AI 智能建議，讓問卷設計更簡單。
+            </p>
+            <div class="flex justify-center space-x-4">
+                <button onclick="app.ctrl.checkAuthAndRedirect('create')"
+                    class="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-blue-700 shadow-lg transition transform hover:-translate-y-1">
+                    <i class="fas fa-plus mr-2"></i> 建立新問卷
+                </button>
+                <div class="relative">
+                    <input type="text" id="dashboard-survey-id" placeholder="輸入 4 碼 ID (如: AB12)"
+                        class="border border-slate-300 rounded-l-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 w-48 uppercase"
+                        maxlength="4">
+                    <button onclick="app.ctrl.loadSurveyForView()"
+                        class="bg-slate-700 text-white px-4 py-3 rounded-r-lg font-bold hover:bg-slate-800 absolute right-0 top-0 h-full">
+                        <i class="fas fa-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Public Surveys List -->
+            <div class="mt-16 max-w-4xl mx-auto text-left">
+                <h3 class="text-2xl font-bold text-slate-700 mb-4 border-b pb-2 flex items-center">
+                    <i class="fas fa-list-ul mr-2 text-blue-500"></i> 公開問卷列表
+                </h3>
+                <div id="public-survey-list" class="grid gap-4">
+                    <!-- Loaded dynamically -->
+                    <div class="text-center text-gray-400 py-8">載入中...</div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- VIEW: Manage Surveys (New) -->
+    <template id="view-manage">
+        <div class="max-w-5xl mx-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-slate-800">問卷管理後台</h2>
+                <button onclick="app.router('create')"
+                    class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 shadow text-sm">
+                    <i class="fas fa-plus mr-2"></i>建立新問卷
+                </button>
+            </div>
+
+            <div class="bg-white rounded shadow overflow-hidden">
+                <table class="w-full text-sm text-left text-gray-500">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3">ID</th>
+                            <th class="px-6 py-3">標題</th>
+                            <th class="px-6 py-3">已收份數</th>
+                            <th class="px-6 py-3">建立時間</th>
+                            <th class="px-6 py-3">限制條件</th>
+                            <th class="px-6 py-3">問卷狀態</th>
+                            <th class="px-6 py-3 text-right">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="manage-list-body">
+                        <!-- Loaded via JS -->
+                    </tbody>
+                </table>
+                <div id="manage-empty" class="hidden p-8 text-center text-gray-400">
+                    尚無問卷，請點擊右上角建立。
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- VIEW: Create Survey -->
+    <template id="view-create">
+        <div class="max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-8">
+            <div class="flex justify-between items-center mb-6 border-b pb-2">
+                <h2 class="text-2xl font-bold text-slate-800" id="create-view-title">設計新問卷</h2>
+                <span id="edit-mode-indicator"
+                    class="hidden bg-orange-100 text-orange-600 text-xs px-2 py-1 rounded font-bold">編輯模式</span>
+            </div>
+
+            <!-- Step 1: Basic Info & AI -->
+            <div class="mb-8">
+                <label class="block text-sm font-bold text-slate-700 mb-1">問卷主題</label>
+                <div class="flex gap-2">
+                    <input type="text" id="survey-title"
+                        class="flex-grow border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="例如：員工滿意度調查">
+                    <button onclick="app.ai.generateQuestions()" id="ai-btn"
+                        class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 transition flex items-center whitespace-nowrap">
+                        <i class="fas fa-robot mr-2"></i> AI 建議
+                    </button>
+                </div>
+                <label class="block text-sm font-bold text-slate-700 mt-4 mb-1">問卷描述</label>
+                <textarea id="survey-desc"
+                    class="w-full border rounded p-2 h-20 focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="簡單描述這份問卷的目的..."></textarea>
+
+                <!-- Survey Limits Settings -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-1">
+                            <i class="fas fa-calendar-times mr-1 text-red-500"></i>到期時間（選填）
+                        </label>
+                        <input type="datetime-local" id="survey-expiry"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                        <p class="text-xs text-gray-500 mt-1">過期後問卷將自動設為不公開</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-1">
+                            <i class="fas fa-users mr-1 text-green-500"></i>收回份數限制（選填）
+                        </label>
+                        <input type="number" id="survey-response-limit" min="1"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                            placeholder="例如：100">
+                        <p class="text-xs text-gray-500 mt-1">達到指定份數後自動設為不公開</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Question Builder -->
+            <div id="questions-container" class="space-y-4 mb-8">
+                <!-- Dynamic Questions Go Here -->
+            </div>
+
+            <div class="flex justify-between border-t pt-6">
+                <button onclick="app.editor.addQuestion()"
+                    class="text-blue-600 font-bold hover:bg-blue-50 px-4 py-2 rounded border border-blue-200 border-dashed w-full mr-4">
+                    <i class="fas fa-plus"></i> 新增問題
+                </button>
+            </div>
+
+            <div class="mt-8 flex justify-end gap-4">
+                <button onclick="app.router('home')"
+                    class="px-6 py-2 text-slate-600 hover:bg-slate-100 rounded">取消</button>
+                <button onclick="app.editor.publish()" id="publish-btn"
+                    class="px-6 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700 shadow transition">
+                    發佈問卷
+                </button>
+            </div>
+        </div>
+    </template>
+
+    <!-- VIEW: Survey Form (Respondent) -->
+    <template id="view-survey">
+        <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-xl overflow-hidden">
+            <div class="bg-blue-600 p-6 text-white">
+                <h1 id="form-title" class="text-2xl font-bold"></h1>
+                <p id="form-desc" class="mt-2 text-blue-100"></p>
+                <div class="mt-4 text-xs bg-blue-700 inline-block px-2 py-1 rounded">ID: <span
+                        id="form-display-id"></span></div>
+            </div>
+            <form id="survey-form" class="p-8 space-y-6" onsubmit="event.preventDefault(); app.ctrl.submitForm();">
+                <div id="form-fields"></div>
+                <!-- Fixed image upload removed, now dynamic -->
+
+                <div class="pt-6">
+                    <button type="submit" id="submit-btn"
+                        class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 shadow transition">
+                        提交問卷
+                    </button>
+                </div>
+            </form>
+        </div>
+    </template>
+
+    <!-- VIEW: Report & Analytics -->
+    <template id="view-report">
+        <!-- ADDED ID HERE: -->
+        <div id="report-content" class="max-w-5xl mx-auto">
+            <div class="flex justify-between items-center mb-6">
+                <div>
+                    <h2 class="text-2xl font-bold text-slate-800" id="report-title">問卷報告</h2>
+                    <p class="text-slate-500" id="report-meta"></p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="app.report.downloadSummaryXLSX()" 
+                        class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 shadow text-sm flex items-center">
+                        <i class="fas fa-file-excel mr-2"></i>下載 Excel (XLSX)
+                    </button>
+                    <button onclick="app.report.downloadSummaryPDF()"
+                        class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 shadow text-sm flex items-center">
+                        <i class="fas fa-file-pdf mr-2"></i>下載總結報告 (PDF)
+                    </button>
+                    <button onclick="app.router('manage')"
+                        class="bg-slate-200 text-slate-700 px-4 py-2 rounded hover:bg-slate-300 shadow text-sm">
+                        返回管理
+                    </button>
+                </div>
+            </div>
+
+            <!-- Stats Overview -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8" id="stats-overview">
+                <!-- Filled dynamically -->
+            </div>
+
+            <!-- Individual Responses Table -->
+            <div class="bg-white rounded shadow mb-8 overflow-hidden">
+                <div class="px-6 py-4 border-b font-bold text-slate-700">回應列表</div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left text-gray-500">
+                        <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 w-1/6">時間</th>
+                                <th class="px-6 py-3 w-4/6">回應內容</th>
+                                <th class="px-6 py-3 w-1/6 text-right">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="response-list-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Charts Section (Hidden but used for PDF gen) -->
+            <div id="charts-container" class="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20"></div>
+        </div>
+    </template>
+
+    <!-- JS Logic -->
+    <script>
+        /**
+         * ProSurvey Hub Core Logic
+         * - Store: Manage State
+         * - Config: Handle URL/LocalStorage
+         * - UI: Modals, Loading
+         * - API: GAS Interaction
+         * - AI: Gemini Integration
+         */
+
+        const STORE_KEY_URL = 'prosurvey_gas_url';
+        const STORE_KEY_API = 'prosurvey_gemini_key';
+
+        // 預設的 GAS 代碼 (用於顯示)
+        const GAS_CODE_TEMPLATE = `/**
+ * ProSurvey Hub - Google Apps Script Backend API
+ * 版本：2.0 (包含問卷限制功能)
+ *
+ * ===== 功能清單 =====
+ * 1. 接收前端 JSON 請求 (doPost)
+ * 2. 自動初始化 Google Sheet (若不存在)
+ * 3. 處理問卷儲存、讀取、更新狀態與回應提交
+ * 4. 支援問卷到期時間自動隱藏
+ * 5. 支援回應份數限制自動隱藏
+ * 6. 提供完整的報告數據分析
+ *
+ * ===== 新功能說明 =====
+ * - 到期時間：設定問卷截止日期，過期後自動設為不公開
+ * - 份數限制：設定收回份數上限，達到後自動設為不公開
+ * - 兩種限制都會在提交回應時即時檢查並自動執行
+ *
+ * ===== 部署步驟（重要！）=====
+ * 1. 在 Google Sheets 中點擊「擴充功能」->「Apps Script」
+ * 2. 將本段程式碼完整複製貼上
+ * 3. 點擊右上角「部署」->「新增部署作業」
+ * 4. 齒輪圖示「選擇類型」->「網頁應用程式」
+ * 5. 設定說明：
+ *    - 執行身分：選擇「我 (Me)」
+ *    - 誰可以存取：選擇「任何人 (Anyone)」⚠️ 這是關鍵設定！
+ * 6. 點擊「部署」
+ * 7. 授權存取權限（依照 Google 提示操作）
+ * 8. 複製產生的「網頁應用程式網址 (Web App URL)」
+ * 9. 將網址貼到前端設定頁面
+ *
+ * ===== 更新已部署的版本 =====
+ * 如果您之前已經部署過舊版本，需要更新：
+ * 1. 將新程式碼貼上覆蓋原有程式碼
+ * 2. 點擊「部署」->「管理部署作業」
+ * 3. 點擊現有部署旁的「編輯」（鉛筆圖示）
+ * 4. 版本選擇「新版本」
+ * 5. 點擊「部署」
+ * 6. URL 保持不變，但功能已更新！
+ *
+ * ===== 資料庫結構 =====
+ * 問卷設定檔：問卷ID, 標題, 描述, 建立時間, 狀態, JSON結構, 到期時間, 份數限制
+ * 回應數據庫：回應ID, 問卷ID, 填答時間, 填答內容JSON, 圖片Base64
+ */
+
+const DB_CONFIG = {
+  surveys: {
+    sheetName: "問卷設定檔",
+    headers: ["問卷ID", "標題", "描述", "建立時間", "狀態", "JSON結構", "到期時間", "份數限制"]
+  },
+  responses: {
+    sheetName: "回應數據庫",
+    headers: ["回應ID", "問卷ID", "填答時間", "填答內容JSON", "圖片Base64"]
+  }
+};
+
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    if (!e || !e.postData) return responseJSON({ status: "error", message: "無效的請求數據" });
+    
+    const data = JSON.parse(e.postData.contents);
+    const action = data.action;
+    
+    initDatabase();
+    
+    let result = {};
+    switch (action) {
+      case "init_check": result = { status: "success", message: "連線成功，資料庫已就緒" }; break;
+      case "save_survey": result = saveSurvey(data.payload); break;
+      case "get_survey": result = getSurvey(data.surveyId); break;
+      case "update_survey_status": result = updateSurveyStatus(data.surveyId, data.status); break;
+      case "submit_response": result = submitResponse(data.payload); break;
+      case "get_report_data": result = getReportData(data.surveyId); break;
+      case "get_all_surveys": result = getAllSurveys(); break;
+      case "delete_survey": result = deleteSurvey(data.surveyId); break;
+      default: result = { status: "error", message: "未知的操作指令" };
+    }
+    return responseJSON(result);
+  } catch (err) {
+    return responseJSON({ status: "error", message: err.toString() });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function doGet(e) {
+  return responseJSON({ status: "success", message: "ProSurvey API is running. Please use POST for actions." });
+}
+
+function initDatabase() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let surveySheet = ss.getSheetByName(DB_CONFIG.surveys.sheetName);
+  if (!surveySheet) {
+    surveySheet = ss.insertSheet(DB_CONFIG.surveys.sheetName);
+    surveySheet.appendRow(DB_CONFIG.surveys.headers);
+    surveySheet.setFrozenRows(1);
+  }
+  let responseSheet = ss.getSheetByName(DB_CONFIG.responses.sheetName);
+  if (!responseSheet) {
+    responseSheet = ss.insertSheet(DB_CONFIG.responses.sheetName);
+    responseSheet.appendRow(DB_CONFIG.responses.headers);
+    responseSheet.setFrozenRows(1);
+  }
+}
+
+function saveSurvey(payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(DB_CONFIG.surveys.sheetName);
+  const data = sheet.getDataRange().getValues();
+  const jsonStructure = JSON.stringify(payload.questions);
+  const timestamp = new Date().toISOString();
+  const expiryDate = payload.expiryDate || "";
+  const responseLimit = payload.responseLimit || "";
+
+  let rowIndex = -1;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] == payload.id) {
+      rowIndex = i + 1;
+      break;
+    }
+  }
+
+  if (rowIndex > 0) {
+    sheet.getRange(rowIndex, 2).setValue(payload.title);
+    sheet.getRange(rowIndex, 3).setValue(payload.description);
+    sheet.getRange(rowIndex, 6).setValue(jsonStructure);
+    sheet.getRange(rowIndex, 7).setValue(expiryDate);
+    sheet.getRange(rowIndex, 8).setValue(responseLimit);
+  } else {
+    sheet.appendRow([payload.id, payload.title, payload.description, timestamp, "published", jsonStructure, expiryDate, responseLimit]);
+  }
+  return { status: "success", message: "問卷已儲存", surveyId: payload.id };
+}
+
+function updateSurveyStatus(surveyId, newStatus) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(DB_CONFIG.surveys.sheetName);
+  const data = sheet.getDataRange().getValues();
+  
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] == surveyId) {
+      // Status is at column 5 (index 4 in 0-base, index 5 in Sheet getRange)
+      sheet.getRange(i + 1, 5).setValue(newStatus);
+      return { status: "success", message: "狀態已更新" };
+    }
+  }
+  return { status: "error", message: "找不到該問卷" };
+}
+
+function getSurvey(surveyId) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(DB_CONFIG.surveys.sheetName);
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] == surveyId) {
+      return {
+        status: "success",
+        data: {
+          id: data[i][0],
+          title: data[i][1],
+          description: data[i][2],
+          questions: JSON.parse(data[i][5]),
+          expiryDate: data[i][6] || "",
+          responseLimit: data[i][7] || ""
+        }
+      };
+    }
+  }
+  return { status: "error", message: "找不到該問卷" };
+}
+
+function submitResponse(payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // Get survey info to check limits
+  const surveySheet = ss.getSheetByName(DB_CONFIG.surveys.sheetName);
+  const surveyData = surveySheet.getDataRange().getValues();
+  let surveyRow = -1;
+  let status = "";
+  let expiryDate = "";
+  let responseLimit = "";
+
+  for (let i = 1; i < surveyData.length; i++) {
+    if (surveyData[i][0] == payload.surveyId) {
+      surveyRow = i + 1;
+      status = surveyData[i][4]; // Status column
+      expiryDate = surveyData[i][6] || "";
+      responseLimit = surveyData[i][7] || "";
+      break;
+    }
+  }
+
+  if (surveyRow === -1) {
+    return { status: "error", message: "找不到該問卷" };
+  }
+
+  // Check Status (New: Stop accepting if not published OR private)
+  if (status !== 'published' && status !== 'private') {
+    return { status: "error", message: "此問卷已停止接收回應 (已關閉)" };
+  }
+
+  // Check expiry date
+  if (expiryDate) {
+    const now = new Date();
+    const expiry = new Date(expiryDate);
+    if (now > expiry) {
+      // Auto-hide expired survey
+      surveySheet.getRange(surveyRow, 5).setValue("hidden");
+      return { status: "error", message: "此問卷已過期" };
+    }
+  }
+
+  // Check response limit
+  if (responseLimit && responseLimit !== "") {
+    const respSheet = ss.getSheetByName(DB_CONFIG.responses.sheetName);
+    const respData = respSheet.getDataRange().getValues();
+    let currentCount = 0;
+    for (let i = 1; i < respData.length; i++) {
+      if (respData[i][1] == payload.surveyId) {
+        currentCount++;
+      }
+    }
+
+    if (currentCount >= parseInt(responseLimit)) {
+      // Auto-hide survey when limit reached
+      surveySheet.getRange(surveyRow, 5).setValue("hidden");
+      return { status: "error", message: "此問卷已達回應上限" };
+    }
+  }
+
+  // Submit response
+  const sheet = ss.getSheetByName(DB_CONFIG.responses.sheetName);
+  const responseId = Utilities.getUuid();
+  const timestamp = new Date().toLocaleString("zh-TW", {timeZone: "Asia/Taipei"});
+  const answersJson = JSON.stringify(payload.answers);
+  const imageField = payload.imageBase64 || "";
+  sheet.appendRow([responseId, payload.surveyId, timestamp, answersJson, imageField]);
+
+  // Check if we just hit the limit and auto-hide if needed
+  if (responseLimit && responseLimit !== "") {
+    const newCount = parseInt(responseLimit);
+    let actualCount = 0;
+    const updatedRespData = sheet.getDataRange().getValues();
+    for (let i = 1; i < updatedRespData.length; i++) {
+      if (updatedRespData[i][1] == payload.surveyId) {
+        actualCount++;
+      }
+    }
+    if (actualCount >= newCount) {
+      surveySheet.getRange(surveyRow, 5).setValue("hidden");
+    }
+  }
+
+  return { status: "success", message: "填答已送出" };
+}
+
+function getReportData(surveyId) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const surveyRes = getSurvey(surveyId);
+  if (surveyRes.status === "error") return surveyRes;
+  
+  const respSheet = ss.getSheetByName(DB_CONFIG.responses.sheetName);
+  const respData = respSheet.getDataRange().getValues();
+  const responses = [];
+  for (let i = 1; i < respData.length; i++) {
+    if (respData[i][1] == surveyId) {
+      responses.push({ responseId: respData[i][0], timestamp: respData[i][2], answers: JSON.parse(respData[i][3]), image: respData[i][4] });
+    }
+  }
+  return { status: "success", survey: surveyRes.data, responses: responses };
+}
+
+function getAllSurveys() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(DB_CONFIG.surveys.sheetName);
+  const data = sheet.getDataRange().getValues();
+  
+  // Get response counts
+  const respSheet = ss.getSheetByName(DB_CONFIG.responses.sheetName);
+  const respData = respSheet.getDataRange().getValues();
+  const counts = {};
+  for (let i = 1; i < respData.length; i++) {
+    const sid = respData[i][1];
+    counts[sid] = (counts[sid] || 0) + 1;
+  }
+
+  const list = [];
+  for (let i = 1; i < data.length; i++) {
+    list.push({
+      id: data[i][0],
+      title: data[i][1],
+      description: data[i][2],
+      createdAt: data[i][3],
+      status: data[i][4],
+      expiryDate: data[i][6] || "",
+      responseLimit: data[i][7] || "",
+      responseCount: counts[data[i][0]] || 0
+    });
+  }
+  list.reverse();
+  return { status: "success", data: list };
+}
+
+function deleteSurvey(surveyId) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(DB_CONFIG.surveys.sheetName);
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] == surveyId) {
+      sheet.deleteRow(i + 1);
+      return { status: "success", message: "問卷已刪除" };
+    }
+  }
+  return { status: "error", message: "找不到該問卷 ID" };
+}
+
+function responseJSON(data) {
+  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
+}`;
+
+        const app = {
+            state: {
+                gasUrl: "",
+                apiKey: "",
+                currentSurvey: null,
+                currentReport: null,
+                editId: null, // Store ID when editing
+                isAdmin: false, // Login state
+                loginRedirect: null // Where to go after login
+            },
+
+            // --- 1. Initialization & Configuration ---
+            init: function () {
+                // Determine GAS URL Priority: URL Param > LocalStorage > Hardcoded
+                const urlParams = new URLSearchParams(window.location.search);
+                const configParam = urlParams.get('config');
+                let derivedUrl = DEFAULT_GAS_URL;
+
+                if (configParam) {
+                    try {
+                        derivedUrl = atob(configParam);
+                        localStorage.setItem(STORE_KEY_URL, derivedUrl); // Save for later
+                    } catch (e) {
+                        console.error("Invalid config param");
+                    }
+                } else {
+                    const stored = localStorage.getItem(STORE_KEY_URL);
+                    if (stored) derivedUrl = stored;
+                }
+
+                this.state.gasUrl = derivedUrl;
+                this.state.apiKey = localStorage.getItem(STORE_KEY_API) || "";
+
+                // Route handling
+                window.addEventListener('hashchange', this.router);
+
+                // If ID is in URL, go to view
+                const idParam = urlParams.get('id');
+                const reportParam = urlParams.get('report');
+
+                if (idParam) {
+                    this.ctrl.loadSurveyForView(idParam);
+                } else if (reportParam) {
+                    this.ctrl.loadReport(reportParam);
+                } else {
+                    this.router('home');
+                }
+
+                // Check connection quietly
+                if (this.state.gasUrl) {
+                    document.getElementById('share-config-section').classList.remove('hidden');
+                }
+            },
+
+            // --- 2. Router ---
+            router: function (route) {
+                // Handle Event object or String
+                let hash = (typeof route === 'string' ? route : window.location.hash.slice(1)) || 'home';
+
+                const container = document.getElementById('main-container');
+                const viewName = hash.split('?')[0];
+                const template = document.getElementById(`view-${viewName}`);
+
+                if (template) {
+                    // Logic to check authentication for manage view
+                    if (viewName === 'manage' && !app.state.isAdmin) {
+                        app.state.loginRedirect = 'manage';
+                        app.ui.openLogin();
+                        return; 
+                    }
+
+                    container.innerHTML = "";
+                    container.appendChild(template.content.cloneNode(true));
+
+                    // Update URL hash if manually navigated
+                    if (typeof route === 'string' && route !== window.location.hash.slice(1)) {
+                        window.location.hash = hash;
+                    }
+
+                    // --- View Specific Init Logic (Fixes race conditions on re-render) ---
+
+                    if (viewName === 'home') {
+                        app.ctrl.loadPublicSurveys();
+                    }
+                    else if (viewName === 'survey') {
+                        if (app.state.currentSurvey) {
+                            app.ctrl.renderSurveyForm();
+                        }
+                    }
+                    else if (viewName === 'create') {
+                        if (app.state.editId) {
+                            app.editor.loadForEdit();
+                        } else {
+                            app.editor.reset();
+                        }
+                    }
+                    else if (viewName === 'manage') {
+                        app.ctrl.loadManageList();
+                    }
+                    else if (viewName === 'report') {
+                        if (app.state.currentReport) {
+                            app.report.render(app.state.currentReport);
+                        }
+                    }
+                }
+
+                // Reset editId if leaving create view
+                if (viewName !== 'create') {
+                    app.state.editId = null;
+                }
+            },
+
+            auth: {
+                login: function() {
+                    const pwd = document.getElementById('admin-password-input').value;
+                    if (pwd === 'tpet') {
+                        app.state.isAdmin = true;
+                        app.ui.closeLogin();
+                        document.getElementById('admin-password-input').value = ""; // Clear
+                        
+                        // Redirect logic
+                        const target = app.state.loginRedirect || 'manage';
+                        app.state.loginRedirect = null; // Reset
+                        app.router(target);
+                        
+                        app.ui.showModal("登入成功", "歡迎回來", "success");
+                    } else {
+                        app.ui.showModal("登入失敗", "密碼錯誤", "error");
+                        document.getElementById('admin-password-input').value = "";
+                    }
+                }
+            },
+
+            // --- 3. UI Controllers ---
+            ui: {
+                showLoader: (show = true) => {
+                    const btn = document.querySelector('button[disabled]');
+                    if (show && btn) btn.innerHTML = '<div class="loader mx-auto"></div>';
+                },
+
+                showLoading: (message = '處理中，請稍候...') => {
+                    const overlay = document.getElementById('loading-overlay');
+                    const messageEl = document.getElementById('loading-message');
+                    if (overlay) {
+                        if (messageEl) messageEl.innerText = message;
+                        overlay.classList.remove('hidden');
+                        document.body.style.overflow = 'hidden'; // Prevent scrolling
+                    }
+                },
+
+                hideLoading: () => {
+                    const overlay = document.getElementById('loading-overlay');
+                    if (overlay) {
+                        overlay.classList.add('hidden');
+                        document.body.style.overflow = ''; // Restore scrolling
+                    }
+                },
+
+                showModal: (title, message, type = 'info') => {
+                    const modal = document.getElementById('alert-modal');
+                    const titleEl = document.getElementById('alert-title');
+                    const msgEl = document.getElementById('alert-message');
+                    const iconEl = document.getElementById('alert-icon');
+                    const bgEl = document.getElementById('alert-icon-bg');
+
+                    if (!modal || !titleEl || !msgEl) {
+                        alert(title + "\n" + message); // Fallback
+                        return;
+                    }
+
+                    titleEl.innerText = title;
+                    msgEl.innerText = message;
+
+                    if (type === 'error') {
+                        if (iconEl) iconEl.className = 'fas fa-exclamation-triangle text-red-600 text-xl';
+                        if (bgEl) bgEl.className = 'flex items-center justify-center w-12 h-12 mx-auto bg-red-100 rounded-full mb-4';
+                    } else if (type === 'success') {
+                        if (iconEl) iconEl.className = 'fas fa-check text-green-600 text-xl';
+                        if (bgEl) bgEl.className = 'flex items-center justify-center w-12 h-12 mx-auto bg-green-100 rounded-full mb-4';
+                    } else {
+                        if (iconEl) iconEl.className = 'fas fa-info text-blue-600 text-xl';
+                        if (bgEl) bgEl.className = 'flex items-center justify-center w-12 h-12 mx-auto bg-blue-100 rounded-full mb-4';
+                    }
+
+                    modal.classList.remove('opacity-0', 'pointer-events-none');
+                    modal.querySelector('.modal-container').classList.remove('scale-95');
+                    modal.querySelector('.modal-container').classList.add('scale-100');
+                },
+
+                // NEW: Custom Confirm Modal
+                showConfirm: (title, message) => {
+                    return new Promise((resolve) => {
+                        const modal = document.getElementById('confirm-modal');
+                        if (!modal) {
+                            return resolve(false);
+                        }
+
+                        document.getElementById('confirm-title').innerText = title;
+                        document.getElementById('confirm-message').innerText = message;
+
+                        const yesBtn = document.getElementById('confirm-yes-btn');
+                        const noBtn = document.getElementById('confirm-no-btn');
+
+                        const newYes = yesBtn.cloneNode(true);
+                        const newNo = noBtn.cloneNode(true);
+                        yesBtn.parentNode.replaceChild(newYes, yesBtn);
+                        noBtn.parentNode.replaceChild(newNo, noBtn);
+
+                        newYes.addEventListener('click', () => {
+                            modal.classList.add('opacity-0', 'pointer-events-none');
+                            resolve(true);
+                        });
+
+                        newNo.addEventListener('click', () => {
+                            modal.classList.add('opacity-0', 'pointer-events-none');
+                            resolve(false);
+                        });
+
+                        modal.classList.remove('opacity-0', 'pointer-events-none');
+                        modal.querySelector('.modal-container').classList.remove('scale-95');
+                        modal.querySelector('.modal-container').classList.add('scale-100');
+                    });
+                },
+
+                showShare: (id) => {
+                    const modal = document.getElementById('share-survey-modal');
+                    const urlInput = document.getElementById('share-url-input');
+                    const qrImg = document.getElementById('share-qr-img');
+                    const idSpan = document.getElementById('share-survey-id');
+
+                    // Construct URL
+                    const baseUrl = window.location.href.split('#')[0].split('?')[0];
+                    let fullUrl = `${baseUrl}?id=${id}`;
+                    
+                    // If using a custom GAS URL (via UI), append config param
+                    const currentGas = app.state.gasUrl ? app.state.gasUrl.trim() : "";
+                    const defaultGas = DEFAULT_GAS_URL ? DEFAULT_GAS_URL.trim() : "";
+                    
+                    if (currentGas && currentGas !== defaultGas) {
+                        try {
+                            const encodedConfig = btoa(currentGas);
+                            fullUrl += `&config=${encodedConfig}`;
+                        } catch (e) {
+                            console.error("Failed to encode config param", e);
+                        }
+                    }
+                    
+                    urlInput.value = fullUrl;
+                    idSpan.innerText = id;
+                    qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(fullUrl)}`;
+
+                    modal.classList.remove('opacity-0', 'pointer-events-none');
+                },
+
+                showImagePreview: (base64) => {
+                    const modal = document.getElementById('image-preview-modal');
+                    const img = document.getElementById('preview-image-element');
+                    img.src = base64;
+                    modal.classList.remove('opacity-0', 'pointer-events-none');
+                },
+
+                closeImagePreview: () => {
+                    const modal = document.getElementById('image-preview-modal');
+                    modal.classList.add('opacity-0', 'pointer-events-none');
+                },
+
+                closeAlert: () => {
+                    const modal = document.getElementById('alert-modal');
+                    if (modal) modal.classList.add('opacity-0', 'pointer-events-none');
+                },
+
+                openSettings: () => {
+                    const modal = document.getElementById('settings-modal');
+                    document.getElementById('gas-url-input').value = app.state.gasUrl;
+                    document.getElementById('gemini-key-input').value = app.state.apiKey;
+                    modal.classList.remove('opacity-0', 'pointer-events-none');
+                },
+
+                closeSettings: () => {
+                    document.getElementById('settings-modal').classList.add('opacity-0', 'pointer-events-none');
+                },
+
+                openLogin: () => {
+                    const modal = document.getElementById('login-modal');
+                    modal.classList.remove('opacity-0', 'pointer-events-none');
+                    setTimeout(() => document.getElementById('admin-password-input').focus(), 100);
+                },
+
+                closeLogin: () => {
+                    document.getElementById('login-modal').classList.add('opacity-0', 'pointer-events-none');
+                },
+
+                openHelp: () => {
+                    const modal = document.getElementById('help-modal');
+                    const codeEl = document.getElementById('gas-code-block');
+                    if (codeEl.innerText.trim() === '') {
+                        codeEl.innerText = GAS_CODE_TEMPLATE;
+                    }
+                    modal.classList.remove('opacity-0', 'pointer-events-none');
+                },
+
+                closeHelp: () => {
+                    document.getElementById('help-modal').classList.add('opacity-0', 'pointer-events-none');
+                },
+
+                openPdfOptions: () => {
+                    const modal = document.getElementById('pdf-options-modal');
+                    modal.classList.remove('opacity-0', 'pointer-events-none');
+                    modal.querySelector('.modal-container').classList.remove('scale-95');
+                    modal.querySelector('.modal-container').classList.add('scale-100');
+                },
+
+                closePdfOptions: () => {
+                    const modal = document.getElementById('pdf-options-modal');
+                    modal.classList.add('opacity-0', 'pointer-events-none');
+                    modal.querySelector('.modal-container').classList.remove('scale-100');
+                    modal.querySelector('.modal-container').classList.add('scale-95');
+                }
+            },
+
+            // --- 4. Config Logic ---
+            config: {
+                saveSettings: () => {
+                    const url = document.getElementById('gas-url-input').value.trim();
+                    const key = document.getElementById('gemini-key-input').value.trim();
+
+                    if (url) localStorage.setItem(STORE_KEY_URL, url);
+                    if (key) localStorage.setItem(STORE_KEY_API, key);
+                    else localStorage.removeItem(STORE_KEY_API);
+
+                    app.state.gasUrl = url;
+                    app.state.apiKey = key;
+
+                    app.ui.closeSettings();
+                    app.ui.showModal("設定已儲存", "連線資訊已更新。", "success");
+                    setTimeout(() => location.reload(), 1500);
+                },
+
+                clearSettings: () => {
+                    localStorage.removeItem(STORE_KEY_URL);
+                    localStorage.removeItem(STORE_KEY_API);
+                    document.getElementById('gas-url-input').value = "";
+                    document.getElementById('gemini-key-input').value = "";
+                    app.state.gasUrl = "";
+                    app.state.apiKey = "";
+                    app.ui.showModal("已重置", "所有本地設定已清除。", "info");
+                },
+
+                generateShareLink: async () => {
+                    if (!app.state.gasUrl) {
+                        app.ui.showModal("錯誤", "請先儲存 GAS URL。", "error");
+                        return;
+                    }
+                    const encodedConfig = btoa(app.state.gasUrl);
+                    const baseUrl = window.location.href.split('#')[0].split('?')[0];
+                    const longUrl = `${baseUrl}?config=${encodedConfig}`;
+
+                    const btn = document.querySelector('#share-config-section button');
+                    const originalText = btn.innerText;
+                    btn.innerText = "生成中...";
+                    btn.disabled = true;
+
+                    try {
+                        const displayUrl = longUrl;
+                        const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(displayUrl)}`;
+                        document.getElementById('short-url-display').innerText = displayUrl;
+                        document.getElementById('qr-image').src = qrApiUrl;
+                        document.getElementById('qr-result').classList.remove('hidden');
+                    } catch (e) {
+                        console.error(e);
+                        app.ui.showModal("錯誤", "無法生成連結", "error");
+                    } finally {
+                        btn.innerText = originalText;
+                        btn.disabled = false;
+                    }
+                }
+            },
+
+            // --- 5. Editor & AI Logic ---
+            editor: {
+                questionCount: 0,
+
+                reset: () => {
+                    app.editor.questionCount = 0;
+                    document.getElementById('questions-container').innerHTML = '';
+                    document.getElementById('create-view-title').innerText = "設計新問卷";
+                    document.getElementById('edit-mode-indicator').classList.add('hidden');
+                    document.getElementById('survey-title').value = '';
+                    document.getElementById('survey-desc').value = '';
+                    document.getElementById('survey-expiry').value = '';
+                    document.getElementById('survey-response-limit').value = '';
+                    document.getElementById('publish-btn').innerText = '發佈問卷';
+                    app.editor.addQuestion(); // Add one default
+                },
+
+                loadForEdit: async () => {
+                    const id = app.state.editId;
+                    if (!id) return app.editor.reset();
+
+                    app.ui.showLoading('載入問卷資料中...');
+                    const res = await app.utils.apiCall({ action: 'get_survey', surveyId: id });
+                    app.ui.hideLoading();
+
+                    if (res.status === 'success') {
+                        const data = res.data;
+                        document.getElementById('create-view-title').innerText = "編輯問卷";
+                        document.getElementById('edit-mode-indicator').classList.remove('hidden');
+                        document.getElementById('edit-mode-indicator').innerText = `正在編輯: ${id}`;
+                        document.getElementById('survey-title').value = data.title;
+                        document.getElementById('survey-desc').value = data.description;
+                        document.getElementById('survey-expiry').value = data.expiryDate || "";
+                        document.getElementById('survey-response-limit').value = data.responseLimit || "";
+                        document.getElementById('publish-btn').innerText = '更新問卷';
+
+                        document.getElementById('questions-container').innerHTML = '';
+                        app.editor.questionCount = 0;
+
+                        data.questions.forEach(q => {
+                            app.editor.addQuestion(q);
+                        });
+                    } else {
+                        app.ui.showModal("錯誤", "無法載入問卷資料", "error");
+                        app.router('manage');
+                    }
+                },
+
+                addQuestion: (data = null) => {
+                    app.editor.questionCount++;
+                    const id = app.editor.questionCount;
+                    const container = document.getElementById('questions-container');
+
+                    const div = document.createElement('div');
+                    // Add class question-block for selection
+                    div.className = "question-block bg-slate-50 p-4 rounded border border-slate-200 relative group animate-fade-in";
+                    div.id = `q-${id}`;
+                    div.innerHTML = `
+                        <div class="flex justify-between mb-2">
+                            <span class="font-bold text-slate-400 text-xs uppercase">問題 ${id}</span>
+                            <div class="flex items-center gap-2">
+                                <button onclick="app.editor.moveUp(this)" class="text-gray-400 hover:text-gray-600 px-1" title="上移">⬆️</button>
+                                <button onclick="app.editor.moveDown(this)" class="text-gray-400 hover:text-gray-600 px-1" title="下移">⬇️</button>
+                                <button onclick="this.closest('.question-block').remove()" class="text-red-400 hover:text-red-600 ml-2" title="刪除"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </div>
+                        <input type="text" class="q-title w-full border rounded p-2 mb-2 font-bold text-slate-700" placeholder="輸入問題內容..." value="${data ? data.title : ''}">
+                        <select class="q-type w-full border rounded p-2 text-sm bg-white mb-2" onchange="app.editor.toggleOptions(this)">
+                            <option value="text" ${data && data.type === 'text' ? 'selected' : ''}>簡答題 (Text)</option>
+                            <option value="textarea" ${data && data.type === 'textarea' ? 'selected' : ''}>多行文字 (Textarea)</option>
+                            <option value="single" ${data && data.type === 'single' ? 'selected' : ''}>單選題 (Radio)</option>
+                            <option value="multi" ${data && data.type === 'multi' ? 'selected' : ''}>多選題 (Checkbox)</option>
+                            <option value="image" ${data && data.type === 'image' ? 'selected' : ''}>圖片上傳 (Image)</option>
+                            <option value="display_image" ${data && data.type === 'display_image' ? 'selected' : ''}>純圖片展示 (不做答)</option>
+                        </select>
+                        <!-- Options Area -->
+                        <textarea class="q-options w-full border rounded p-2 text-sm h-20 ${data && (data.type === 'single' || data.type === 'multi') ? '' : 'hidden'}" placeholder="選項 (每行一個選項)">${data && data.options ? data.options.join('\n') : ''}</textarea>
+                        <!-- Display Image Upload Area -->
+                        <div class="q-display-image-area ${data && data.type === 'display_image' ? '' : 'hidden'} border p-4 rounded bg-white text-center">
+                            <input type="file" accept="image/*" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" onchange="app.editor.previewDisplayImage(this)">
+                            <div class="mt-2">
+                                <img src="${data && data.imageContent ? data.imageContent : ''}" class="max-h-40 mx-auto ${data && data.imageContent ? '' : 'hidden'} preview-img">
+                                <input type="hidden" class="q-display-image-val" value="${data && data.imageContent ? data.imageContent : ''}">
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                },
+
+                toggleOptions: (selectEl) => {
+                    const type = selectEl.value;
+                    const block = selectEl.closest('.question-block');
+                    const optEl = block.querySelector('.q-options');
+                    const imgArea = block.querySelector('.q-display-image-area');
+
+                    if (type === 'single' || type === 'multi') {
+                        optEl.classList.remove('hidden');
+                        imgArea.classList.add('hidden');
+                    } else if (type === 'display_image') {
+                        optEl.classList.add('hidden');
+                        imgArea.classList.remove('hidden');
+                    } else {
+                        optEl.classList.add('hidden');
+                        imgArea.classList.add('hidden');
+                    }
+                },
+
+                moveUp: (btn) => {
+                    const current = btn.closest('.question-block');
+                    const prev = current.previousElementSibling;
+                    if(prev) current.parentNode.insertBefore(current, prev);
+                },
+
+                moveDown: (btn) => {
+                    const current = btn.closest('.question-block');
+                    const next = current.nextElementSibling;
+                    if(next) current.parentNode.insertBefore(next, current);
+                },
+
+                previewDisplayImage: async (input) => {
+                    if (input.files && input.files[0]) {
+                        try {
+                            const base64 = await app.utils.compressImage(input.files[0]);
+                            const container = input.parentElement;
+                            const img = container.querySelector('.preview-img');
+                            const hiddenInput = container.querySelector('.q-display-image-val');
+                            
+                            img.src = base64;
+                            img.classList.remove('hidden');
+                            hiddenInput.value = base64;
+                        } catch (e) {
+                            console.error(e);
+                            app.ui.showModal("錯誤", "圖片處理失敗", "error");
+                        }
+                    }
+                },
+
+                publish: async () => {
+                    if (!app.state.gasUrl) return app.ui.showModal("尚未設定連線", "請點擊右上角設定，輸入 GAS URL。", "error");
+
+                    const title = document.getElementById('survey-title').value;
+                    const desc = document.getElementById('survey-desc').value;
+                    if (!title) return app.ui.showModal("欄位缺漏", "請輸入問卷標題", "error");
+
+                    const questions = [];
+                    const qBlocks = document.querySelectorAll('#questions-container > .question-block');
+                    
+                    // Use standard for loop to support await if needed, though we process display images immediately on change now
+                    for (const div of qBlocks) {
+                        const qTitle = div.querySelector('.q-title').value;
+                        const qType = div.querySelector('.q-type').value;
+                        const qOpts = div.querySelector('.q-options').value.split('\n').filter(x => x.trim());
+                        const qImageContent = div.querySelector('.q-display-image-val')?.value || "";
+                        
+                        if (qTitle) {
+                            questions.push({
+                                id: div.id,
+                                title: qTitle,
+                                type: qType,
+                                options: qOpts,
+                                imageContent: qType === 'display_image' ? qImageContent : null
+                            });
+                        }
+                    }
+
+                    if (questions.length === 0) return app.ui.showModal("錯誤", "至少需要一個問題", "error");
+
+                    // ID Generation: Use 4-char Alphanumeric or existing ID if editing
+                    const surveyId = app.state.editId ? app.state.editId : app.utils.generateId();
+
+                    // Get survey limits
+                    const expiryDate = document.getElementById('survey-expiry').value || "";
+                    const responseLimit = document.getElementById('survey-response-limit').value || "";
+
+                    const payload = {
+                        action: 'save_survey',
+                        payload: {
+                            id: surveyId,
+                            title: title,
+                            description: desc,
+                            questions: questions,
+                            expiryDate: expiryDate,
+                            responseLimit: responseLimit
+                        }
+                    };
+
+                    app.ui.showLoading(app.state.editId ? '更新問卷中...' : '發佈問卷中...');
+                    const res = await app.utils.apiCall(payload);
+                    app.ui.hideLoading();
+
+                    if (res && res.status === 'success') {
+                        app.ui.showModal("成功", `問卷 ${app.state.editId ? '更新' : '發佈'}成功！\nID: ${surveyId}`, "success");
+                        app.state.editId = null; // Clear edit state
+                        app.router('manage'); // Go to manage view
+                    } else {
+                        app.ui.showModal("發佈失敗", res ? res.message : "API Error", "error");
+                    }
+                }
+            },
+
+            ai: {
+                generateQuestions: async () => {
+                    const topic = document.getElementById('survey-title').value;
+                    const desc = document.getElementById('survey-desc').value; // Get description
+
+                    if (!topic) return app.ui.showModal("提示", "請先輸入問卷主題，AI 才能提供建議。", "info");
+
+                    const btn = document.getElementById('ai-btn');
+                    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>思考中...';
+                    btn.disabled = true;
+
+                    const apiKey = app.state.apiKey;
+                    const prompt = `請根據以下問卷資訊設計 5 個相關問題：
+主題：「${topic}」
+${desc ? `補充描述：「${desc}」` : ''}
+
+請只回傳純 JSON 陣列，不要有 markdown 標記。
+格式範例：[{"title":"問題標題","type":"single","options":["選項1","選項2"]}]
+type 只能是: text, textarea, single, multi, image, display_image。`;
+
+                    try {
+                        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                contents: [{ parts: [{ text: prompt }] }]
+                            })
+                        });
+
+                        const data = await response.json();
+                        const rawText = data.candidates[0].content.parts[0].text;
+                        const jsonText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                        const questions = JSON.parse(jsonText);
+
+                        questions.forEach(q => {
+                            const qData = {
+                                title: q.title,
+                                type: q.type,
+                                options: Array.isArray(q.options) ? q.options : [],
+                                imageContent: null // AI generated doesn't have image
+                            };
+                            app.editor.addQuestion(qData);
+                        });
+
+                    } catch (e) {
+                        console.error(e);
+                        app.ui.showModal("AI 生成失敗", "請檢查 API Key 或稍後再試。\n(Canvas 環境請留空 Key)", "error");
+                    } finally {
+                        btn.innerHTML = '<i class="fas fa-robot mr-2"></i> AI 建議';
+                        btn.disabled = false;
+                    }
+                }
+            },
+
+            // --- 6. Controller (View/Submit/Report/Manage) ---
+            ctrl: {
+                // New Function: Auth Guard for Create/Manage
+                checkAuthAndRedirect: (route) => {
+                    if (app.state.isAdmin) {
+                        app.router(route);
+                    } else {
+                        app.state.loginRedirect = route;
+                        app.ui.openLogin();
+                    }
+                },
+
+                // New Function: Load Public Surveys for Home
+                loadPublicSurveys: async () => {
+                    const listContainer = document.getElementById('public-survey-list');
+                    if (!app.state.gasUrl) {
+                        listContainer.innerHTML = '<div class="text-center text-gray-400 py-8">尚未設定 GAS URL</div>';
+                        return;
+                    }
+
+                    listContainer.innerHTML = '<div class="text-center py-8"><div class="loader mx-auto"></div></div>';
+                    const res = await app.utils.apiCall({ action: 'get_all_surveys' });
+                    
+                    if (res && res.status === 'success') {
+                        const publicSurveys = res.data.filter(s => s.status === 'published');
+                        if (publicSurveys.length === 0) {
+                            listContainer.innerHTML = '<div class="text-center text-gray-400 py-8">目前沒有公開的問卷</div>';
+                        } else {
+                            listContainer.innerHTML = '';
+                            publicSurveys.forEach(s => {
+                                const el = document.createElement('div');
+                                el.className = "bg-white p-4 rounded shadow border hover:border-blue-300 transition cursor-pointer";
+                                el.onclick = () => app.ctrl.loadSurveyForView(s.id);
+                                el.innerHTML = `
+                                    <div class="flex justify-between items-center">
+                                        <div>
+                                            <h4 class="font-bold text-lg text-slate-800">${s.title}</h4>
+                                            <p class="text-sm text-gray-500">${s.description || '無描述'}</p>
+                                        </div>
+                                        <button class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">開始填答</button>
+                                    </div>
+                                `;
+                                listContainer.appendChild(el);
+                            });
+                        }
+                    } else {
+                        listContainer.innerHTML = '<div class="text-center text-red-400 py-8">無法載入問卷</div>';
+                    }
+                },
+
+                loadManageList: async () => {
+                    if (!app.state.gasUrl) return app.ui.showModal("錯誤", "未設定 GAS URL", "error");
+
+                    const tbody = document.getElementById('manage-list-body');
+                    const emptyMsg = document.getElementById('manage-empty');
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><div class="loader mx-auto"></div></td></tr>';
+
+                    const res = await app.utils.apiCall({ action: 'get_all_surveys' });
+                    tbody.innerHTML = '';
+
+                    if (res && res.status === 'success') {
+                        if (res.data.length === 0) {
+                            emptyMsg.classList.remove('hidden');
+                        } else {
+                            emptyMsg.classList.add('hidden');
+                            res.data.forEach(s => {
+                                // Safe date parsing
+                                let dateStr = "-";
+                                if (s.createdAt) {
+                                    if (typeof s.createdAt === 'string') dateStr = s.createdAt.split('T')[0];
+                                    else if (s.createdAt instanceof Date) dateStr = s.createdAt.toLocaleDateString();
+                                }
+
+                                // Status Logic (3 States)
+                                let toggleColor, statusText;
+                                if (s.status === 'published') {
+                                    toggleColor = 'bg-green-500 hover:bg-green-600';
+                                    statusText = '接收中 (公開)';
+                                } else if (s.status === 'private') {
+                                    toggleColor = 'bg-orange-400 hover:bg-orange-500';
+                                    statusText = '接收中 (不公開)';
+                                } else {
+                                    // Default to hidden/closed
+                                    toggleColor = 'bg-red-500 hover:bg-red-600';
+                                    statusText = '已停止';
+                                }
+
+                                // Format limits info
+                                let limitsHtml = '<span class="text-gray-400 text-xs">無限制</span>';
+                                const limits = [];
+                                if (s.expiryDate) {
+                                    const expiryStr = new Date(s.expiryDate).toLocaleString('zh-TW', {
+                                        month: '2-digit',
+                                        day: '2-digit',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                    });
+                                    limits.push(`<i class="fas fa-calendar-times text-red-500"></i> ${expiryStr}`);
+                                }
+                                if (s.responseLimit) {
+                                    limits.push(`<i class="fas fa-users text-green-500"></i> ${s.responseLimit}份`);
+                                }
+                                if (limits.length > 0) {
+                                    limitsHtml = `<div class="text-xs space-y-1">${limits.join('<br>')}</div>`;
+                                }
+
+                                const tr = document.createElement('tr');
+                                tr.className = "bg-white border-b hover:bg-gray-50 align-middle";
+                                tr.innerHTML = `
+                                    <td class="px-6 py-4 font-bold text-blue-600">${s.id}</td>
+                                    <td class="px-6 py-4 font-medium text-gray-900">${s.title}</td>
+                                    <td class="px-6 py-4 text-center font-bold text-slate-700 bg-slate-50">${s.responseCount || 0}</td>
+                                    <td class="px-6 py-4 text-xs text-gray-500">${dateStr}</td>
+                                    <td class="px-6 py-4">${limitsHtml}</td>
+                                    <td class="px-6 py-4">
+                                        <button onclick="app.ctrl.toggleStatus('${s.id}', '${s.status}')" class="${toggleColor} text-white text-xs font-bold px-2 py-1 rounded transition w-32 text-center shadow-sm whitespace-nowrap">
+                                            ${statusText}
+                                        </button>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <div class="flex items-center justify-end gap-3">
+                                            <button onclick="app.ui.showShare('${s.id}')" class="group flex flex-col items-center justify-center text-blue-500 hover:text-blue-700 hover:bg-blue-50 p-2 rounded transition" title="分享連結">
+                                                <i class="fas fa-share-alt text-xl mb-1 transform group-hover:scale-110 transition"></i>
+                                                <span class="text-[10px] font-bold">分享</span>
+                                            </button>
+                                            <button onclick="app.ctrl.copySurvey('${s.id}')" class="group flex flex-col items-center justify-center text-purple-500 hover:text-purple-700 hover:bg-purple-50 p-2 rounded transition" title="複製問卷">
+                                                <i class="fas fa-copy text-xl mb-1 transform group-hover:scale-110 transition"></i>
+                                                <span class="text-[10px] font-bold">複製</span>
+                                            </button>
+                                            <button onclick="app.ctrl.editSurvey('${s.id}')" class="group flex flex-col items-center justify-center text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 p-2 rounded transition" title="編輯">
+                                                <i class="fas fa-edit text-xl mb-1 transform group-hover:scale-110 transition"></i>
+                                                <span class="text-[10px] font-bold">編輯</span>
+                                            </button>
+                                            <button onclick="app.ctrl.viewReport('${s.id}')" class="group flex flex-col items-center justify-center text-green-500 hover:text-green-700 hover:bg-green-50 p-2 rounded transition" title="查看報告">
+                                                <i class="fas fa-chart-bar text-xl mb-1 transform group-hover:scale-110 transition"></i>
+                                                <span class="text-[10px] font-bold">報告</span>
+                                            </button>
+                                            <button onclick="app.ctrl.deleteSurvey('${s.id}')" class="group flex flex-col items-center justify-center text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded transition" title="刪除">
+                                                <i class="fas fa-trash text-xl mb-1 transform group-hover:scale-110 transition"></i>
+                                                <span class="text-[10px] font-bold">刪除</span>
+                                            </button>
+                                        </div>
+                                    </td>
+                                `;
+                                tbody.appendChild(tr);
+                            });
+                        }
+                    } else {
+                        app.ui.showModal("錯誤", "無法載入列表", "error");
+                    }
+                },
+
+                toggleStatus: async (id, currentStatus) => {
+                    let newStatus;
+                    // Cycle: published -> private -> hidden -> published
+                    if (currentStatus === 'published') newStatus = 'private';
+                    else if (currentStatus === 'private') newStatus = 'hidden';
+                    else newStatus = 'published';
+
+                    const btn = event.target;
+                    const originalText = btn.innerText;
+                    btn.innerText = "...";
+
+                    app.ui.showLoading('切換狀態中...');
+                    const res = await app.utils.apiCall({
+                        action: 'update_survey_status',
+                        surveyId: id,
+                        status: newStatus
+                    });
+                    app.ui.hideLoading();
+
+                    if(res.status === 'success') {
+                        app.ctrl.loadManageList(); // Reload to refresh UI properly
+                    } else {
+                        btn.innerText = originalText;
+                        app.ui.showModal("錯誤", "更新失敗", "error");
+                    }
+                },
+
+                copySurvey: async (id) => {
+                    const confirmed = await app.ui.showConfirm("複製問卷", `確定要複製問卷 ${id} 嗎？將創建一個新的副本。`);
+                    if (!confirmed) return;
+
+                    app.ui.showLoading('複製問卷中...');
+
+                    // Get original survey data
+                    const res = await app.utils.apiCall({ action: 'get_survey', surveyId: id });
+
+                    if (res && res.status === 'success') {
+                        const original = res.data;
+
+                        // Generate new ID
+                        const newId = app.utils.generateId();
+
+                        // Create copy with new ID and modified title
+                        const payload = {
+                            action: 'save_survey',
+                            payload: {
+                                id: newId,
+                                title: `${original.title} (副本)`,
+                                description: original.description,
+                                questions: original.questions,
+                                expiryDate: original.expiryDate || "",
+                                responseLimit: original.responseLimit || ""
+                            }
+                        };
+
+                        const saveRes = await app.utils.apiCall(payload);
+                        app.ui.hideLoading();
+
+                        if (saveRes && saveRes.status === 'success') {
+                            app.ui.showModal("成功", `問卷已複製！\n新問卷 ID: ${newId}`, "success");
+                            app.ctrl.loadManageList(); // Refresh list
+                        } else {
+                            app.ui.showModal("複製失敗", saveRes ? saveRes.message : "API Error", "error");
+                        }
+                    } else {
+                        app.ui.hideLoading();
+                        app.ui.showModal("複製失敗", "無法載入原問卷資料", "error");
+                    }
+                },
+
+                editSurvey: (id) => {
+                    app.state.editId = id;
+                    app.router('create');
+                },
+
+                viewReport: (id) => {
+                    app.ctrl.loadReport(id);
+                },
+
+                deleteSurvey: async (id) => {
+                    // Replaced native confirm() with custom modal logic
+                    const confirmed = await app.ui.showConfirm("刪除確認", `確定要刪除問卷 ${id} 嗎？此動作無法復原。`);
+                    if (!confirmed) return;
+
+                    app.ui.showLoading('刪除問卷中...');
+                    const res = await app.utils.apiCall({ action: 'delete_survey', surveyId: id });
+                    app.ui.hideLoading();
+
+                    if (res.status === 'success') {
+                        app.ctrl.loadManageList(); // Refresh
+                    } else {
+                        app.ui.showModal("刪除失敗", res.message, "error");
+                    }
+                },
+
+                loadSurveyForView: async (id = null) => {
+                    // Normalize ID to uppercase
+                    const rawId = id || document.getElementById('dashboard-survey-id').value.trim();
+                    const surveyId = rawId.toUpperCase();
+
+                    if (!surveyId) return;
+
+                    if (!app.state.gasUrl) {
+                        app.ui.openSettings();
+                        app.ui.showModal("需連線設定", "請輸入系統擁有者提供的 GAS 網址 (或使用帶有 ?config= 的連結)。", "info");
+                        return;
+                    }
+
+                    app.ui.showLoading('載入問卷中...');
+                    const res = await app.utils.apiCall({ action: 'get_survey', surveyId: surveyId });
+                    app.ui.hideLoading();
+
+                    if (res && res.status === 'success') {
+                        app.state.currentSurvey = res.data;
+                        app.router('survey');
+                    } else {
+                        app.ui.showModal("載入失敗", "找不到該問卷 (ID錯誤) 或連線錯誤", "error");
+                    }
+                },
+
+                // NEW: Logic separated to fix race condition
+                renderSurveyForm: () => {
+                    const data = app.state.currentSurvey;
+                    if (!data) return;
+
+                    const idEl = document.getElementById('form-display-id');
+                    if (idEl) idEl.innerText = data.id;
+
+                    const titleEl = document.getElementById('form-title');
+                    if (titleEl) titleEl.innerText = data.title;
+
+                    const descEl = document.getElementById('form-desc');
+                    if (descEl) descEl.innerText = data.description;
+
+                    const container = document.getElementById('form-fields');
+                    if (container) {
+                        container.innerHTML = '';
+                        data.questions.forEach((q, idx) => {
+                            let html = `<div class="bg-slate-50 p-4 rounded border border-slate-100" data-qid="${q.id}" data-type="${q.type}">`;
+                            
+                            // For display_image, don't show index/title like a question if title is empty, or show if present
+                            if (q.type !== 'display_image' || q.title) {
+                                html += `<p class="font-bold text-slate-800 mb-2">${idx + 1}. ${q.title}</p>`;
+                            }
+
+                            if (q.type === 'text') {
+                                html += `<input type="text" class="w-full border rounded p-2 focus:ring-blue-500" name="${q.id}">`;
+                            } else if (q.type === 'textarea') {
+                                html += `<textarea class="w-full border rounded p-2 focus:ring-blue-500 h-24" name="${q.id}"></textarea>`;
+                            } else if (q.type === 'image') {
+                                html += `<input type="file" accept="image/*" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" name="${q.id}">`;
+                            } else if (q.type === 'display_image') {
+                                if (q.imageContent) {
+                                    html += `<img src="${q.imageContent}" class="max-w-full h-auto rounded mx-auto shadow-sm">`;
+                                } else {
+                                    html += `<p class="text-gray-400 italic text-center">(無圖片)</p>`;
+                                }
+                            } else if (q.type === 'single') {
+                                q.options.forEach(opt => {
+                                    html += `<label class="flex items-center space-x-2 mb-1 cursor-pointer">
+                                        <input type="radio" name="${q.id}" value="${opt}" class="text-blue-600"> <span>${opt}</span>
+                                    </label>`;
+                                });
+                            } else if (q.type === 'multi') {
+                                q.options.forEach(opt => {
+                                    html += `<label class="flex items-center space-x-2 mb-1 cursor-pointer">
+                                        <input type="checkbox" name="${q.id}" value="${opt}" class="text-blue-600"> <span>${opt}</span>
+                                    </label>`;
+                                });
+                            }
+                            html += `</div>`;
+                            container.innerHTML += html;
+                        });
+                    }
+                },
+
+                submitForm: async () => {
+                    if (!app.state.currentSurvey) return;
+
+                    const answers = {};
+                    const surveyData = app.state.currentSurvey;
+                    let imageBase64 = "";
+
+                    // Use for-of loop to support await if needed, though here we use a promise wrapper later
+                    for (const q of surveyData.questions) {
+                        // Skip display_image questions for answers
+                        if (q.type === 'display_image') continue;
+
+                        const el = document.querySelector(`[data-qid="${q.id}"]`);
+                        if (q.type === 'text') {
+                            answers[q.title] = el.querySelector('input').value;
+                        } else if (q.type === 'textarea') {
+                            answers[q.title] = el.querySelector('textarea').value;
+                        } else if (q.type === 'single') {
+                            const checked = el.querySelector('input:checked');
+                            answers[q.title] = checked ? checked.value : "";
+                        } else if (q.type === 'multi') {
+                            const checked = el.querySelectorAll('input:checked');
+                            answers[q.title] = Array.from(checked).map(c => c.value).join(', ');
+                        } else if (q.type === 'image') {
+                            // Find file input within this question block
+                            const fileInput = el.querySelector('input[type="file"]');
+                            if (fileInput && fileInput.files.length > 0) {
+                                try {
+                                    // Compress and assign to payload variable.
+                                    // NOTE: Current backend logic expects ONE image column.
+                                    // If multiple image questions exist, the last one will overwrite.
+                                    // For now, assuming single image requirement or last-one-wins.
+                                    imageBase64 = await app.utils.compressImage(fileInput.files[0]);
+                                    answers[q.title] = "(圖片已上傳)";
+                                } catch (e) {
+                                    console.error(e);
+                                    return app.ui.showModal("圖片錯誤", "圖片處理失敗", "error");
+                                }
+                            } else {
+                                answers[q.title] = "(未上傳)";
+                            }
+                        }
+                    }
+
+                    const payload = {
+                        action: 'submit_response',
+                        payload: {
+                            surveyId: surveyData.id,
+                            answers: answers,
+                            imageBase64: imageBase64
+                        }
+                    };
+
+                    const submitBtn = document.getElementById('submit-btn');
+                    submitBtn.disabled = true;
+                    submitBtn.innerText = "傳送中...";
+
+                    app.ui.showLoading('提交回應中...');
+                    const res = await app.utils.apiCall(payload);
+                    app.ui.hideLoading();
+
+                    if (res && res.status === 'success') {
+                        app.ui.showModal("感謝", "您的回應已成功送出！", "success");
+                        setTimeout(() => app.router('home'), 2000);
+                    } else {
+                        submitBtn.disabled = false;
+                        submitBtn.innerText = "提交問卷";
+                        app.ui.showModal("提交失敗", res ? res.message : "API Error", "error");
+                    }
+                },
+
+                loadReport: async (id) => {
+                    if (!app.state.gasUrl) return app.ui.showModal("錯誤", "未設定 GAS URL", "error");
+
+                    app.ui.showLoading('載入報告資料中...');
+                    const res = await app.utils.apiCall({ action: 'get_report_data', surveyId: id });
+                    app.ui.hideLoading();
+
+                    if (res && res.status === 'success') {
+                        app.state.currentReport = res;
+                        app.router('report');
+                        app.report.render(res);
+                    } else {
+                        app.ui.showModal("錯誤", "無法載入報告", "error");
+                    }
+                }
+            },
+
+            // --- 7. Reporting & PDF ---
+            report: {
+                render: (data) => {
+                    // 修正資料解構:處理 API 回應可能包含 status 的情況
+                    const survey = data.survey || data.data?.survey;
+                    const responses = data.responses || data.data?.responses || [];
+
+                    // 驗證資料是否正確載入
+                    if (!survey) {
+                        console.error("Survey data missing:", data);
+                        app.ui.showModal("錯誤", "無法載入問卷資料", "error");
+                        return;
+                    }
+
+                    document.getElementById('report-title').innerText = `${survey.title} - 統計報告`;
+                    document.getElementById('report-meta').innerText = `總回收份數:${responses.length} | 產出時間:${new Date().toLocaleDateString()}`;
+
+                    const statsHtml = `
+                        <div class="bg-blue-50 p-4 rounded text-center">
+                            <div class="text-3xl font-bold text-blue-600">${responses.length}</div>
+                            <div class="text-sm text-slate-500">總回應數</div>
+                        </div>
+                    `;
+                    document.getElementById('stats-overview').innerHTML = statsHtml;
+
+                    const listBody = document.getElementById('response-list-body');
+
+                    if (!responses || responses.length === 0) {
+                        listBody.innerHTML = '<tr><td colspan="3" class="text-center py-4 text-gray-400">尚無回應資料</td></tr>';
+                    } else {
+                        listBody.innerHTML = '';
+                        responses.forEach((r, idx) => {
+                            let contentHtml = "<span class='text-gray-400'>無內容</span>";
+                            let timeStr = "-";
+
+                            // Safe Data Parsing Block
+                            try {
+                                if (r.answers && typeof r.answers === 'object') {
+                                    // Display questions and answers with collapsible feature
+                                    const qaItems = [];
+                                    const qaEntries = Object.entries(r.answers);
+
+                                    qaEntries.forEach(([question, answer], qIdx) => {
+                                        const displayAnswer = String(answer || '(未填答)');
+                                        // Escape HTML to prevent XSS and preserve formatting
+                                        const escapedAnswer = displayAnswer
+                                            .replace(/&/g, '&amp;')
+                                            .replace(/</g, '&lt;')
+                                            .replace(/>/g, '&gt;')
+                                            .replace(/"/g, '&quot;')
+                                            .replace(/'/g, '&#039;');
+
+                                        // Add class for items beyond first 2 (will be hidden by default)
+                                        const hiddenClass = qIdx >= 2 ? `hidden collapsed-qa-${idx}` : '';
+
+                                        qaItems.push(`
+                                            <div class="mb-3 ${hiddenClass}">
+                                                <div class="font-semibold text-xs text-gray-700 mb-1">Q: ${question}</div>
+                                                <div class="text-xs text-gray-600 bg-gray-50 px-3 py-2 rounded whitespace-pre-wrap">${escapedAnswer}</div>
+                                            </div>
+                                        `);
+                                    });
+
+                                    if (qaItems.length > 0) {
+                                        contentHtml = `<div class="text-left">${qaItems.join('')}`;
+
+                                        // Add expand/collapse button if more than 2 questions
+                                        if (qaEntries.length > 2) {
+                                            contentHtml += `
+                                                <button onclick="app.report.toggleResponse(${idx})"
+                                                    id="toggle-btn-${idx}"
+                                                    class="text-blue-600 hover:text-blue-800 text-xs font-semibold mt-2 flex items-center gap-1 transition">
+                                                    <i class="fas fa-chevron-down"></i>
+                                                    <span>展開更多 (還有 ${qaEntries.length - 2} 題)</span>
+                                                </button>
+                                            `;
+                                        }
+
+                                        contentHtml += `</div>`;
+                                    }
+                                }
+
+                                // Append thumbnail if image exists
+                                if (r.image) {
+                                    contentHtml += `<div class="mt-3 pt-3 border-t border-gray-200">
+                                        <div class="text-xs font-semibold text-gray-700 mb-2">附件圖片:</div>
+                                        <img src="${r.image}" class="h-20 w-auto object-contain border rounded cursor-pointer hover:opacity-80 transition shadow-sm" onclick="app.ui.showImagePreview(app.state.currentReport.responses[${idx}].image)" title="點擊放大預覽">
+                                    </div>`;
+                                }
+
+                                // Safe timestamp
+                                if (r.timestamp) {
+                                    if (typeof r.timestamp === 'string') timeStr = r.timestamp.split('T')[0];
+                                    else if (r.timestamp instanceof Date) timeStr = r.timestamp.toLocaleDateString();
+                                    else timeStr = String(r.timestamp);
+                                }
+                            } catch (err) {
+                                console.error("Row data parse error", err);
+                                contentHtml = "<span class='text-red-400'>資料異常</span>";
+                            }
+
+                            // Render Block
+                            const tr = document.createElement('tr');
+                            tr.className = "bg-white border-b hover:bg-gray-50 align-top";
+                            tr.innerHTML = `
+                                <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500">${timeStr}</td>
+                                <td class="px-6 py-4 font-medium text-gray-900">${contentHtml}</td>
+                                <td class="px-6 py-4 text-right whitespace-nowrap">
+                                    <button onclick="app.report.downloadIndividualPDF(${idx})" class="text-blue-600 hover:underline text-xs">下載 PDF</button>
+                                </td>
+                            `;
+                            listBody.appendChild(tr);
+                        });
+                    }
+
+                    const chartContainer = document.getElementById('charts-container');
+                    chartContainer.innerHTML = '';
+
+                    survey.questions.forEach((q, i) => {
+                        if (q.type !== 'text' && q.type !== 'textarea' && q.type !== 'image' && q.type !== 'display_image') {
+                            const counts = {};
+                            q.options.forEach(o => counts[o] = 0);
+                            responses.forEach(r => {
+                                const ans = r.answers[q.title];
+                                if (ans) {
+                                    const parts = ans.split(', ');
+                                    parts.forEach(p => { if (counts[p] !== undefined) counts[p]++; });
+                                }
+                            });
+
+                            const canvasId = `chart-${i}`;
+                            const wrap = document.createElement('div');
+                            wrap.className = "bg-white p-4 rounded shadow border";
+                            wrap.innerHTML = `<h4 class="font-bold mb-4 text-center">${q.title}</h4><canvas id="${canvasId}"></canvas>`;
+                            chartContainer.appendChild(wrap);
+
+                            new Chart(document.getElementById(canvasId), {
+                                type: 'bar',
+                                data: {
+                                    labels: Object.keys(counts),
+                                    datasets: [{
+                                        label: '票數',
+                                        data: Object.values(counts),
+                                        backgroundColor: 'rgba(59, 130, 246, 0.6)'
+                                    }]
+                                },
+                                options: { responsive: true }
+                            });
+                        }
+                    });
+                },
+
+                downloadSummaryXLSX: () => {
+                    const data = app.state.currentReport;
+                    if (!data || !data.survey || !data.responses) {
+                        return app.ui.showModal("錯誤", "無資料可匯出", "error");
+                    }
+
+                    const survey = data.survey;
+                    const responses = data.responses;
+
+                    // 1. Prepare Headers
+                    const headers = ["回應時間", "回應ID"];
+                    const questionTitles = survey.questions.filter(q => q.type !== 'display_image').map(q => q.title);
+                    headers.push(...questionTitles);
+                    headers.push("圖片連結(Base64)");
+
+                    // 2. Create Workbook and Worksheet
+                    const wb = XLSX.utils.book_new();
+                    const ws = {};
+
+                    // Define range
+                    const range = {
+                        s: { c: 0, r: 0 },
+                        e: { c: headers.length - 1, r: responses.length }
+                    };
+                    ws['!ref'] = XLSX.utils.encode_range(range);
+
+                    // 3. Set Headers with styling
+                    headers.forEach((header, colIdx) => {
+                        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: colIdx });
+                        ws[cellAddress] = {
+                            v: header,
+                            t: 's',
+                            s: {
+                                font: { bold: true },
+                                fill: { fgColor: { rgb: "F3F4F6" } },
+                                alignment: { wrapText: true, vertical: 'top', horizontal: 'center' }
+                            }
+                        };
+                    });
+
+                    // 4. Set Data Rows with wrap text enabled
+                    responses.forEach((r, rowIdx) => {
+                        const dataRow = rowIdx + 1; // +1 because row 0 is headers
+
+                        // Timestamp
+                        ws[XLSX.utils.encode_cell({ r: dataRow, c: 0 })] = {
+                            v: r.timestamp || "",
+                            t: 's',
+                            s: { alignment: { wrapText: true, vertical: 'top' } }
+                        };
+
+                        // Response ID
+                        ws[XLSX.utils.encode_cell({ r: dataRow, c: 1 })] = {
+                            v: r.responseId || "",
+                            t: 's',
+                            s: { alignment: { wrapText: true, vertical: 'top' } }
+                        };
+
+                        // Answer columns - preserve newlines
+                        questionTitles.forEach((title, qIdx) => {
+                            let ans = r.answers[title] || "";
+                            // Ensure string type
+                            if (typeof ans !== 'string') {
+                                ans = String(ans);
+                            }
+
+                            const colIdx = qIdx + 2; // +2 to skip timestamp and responseId columns
+                            ws[XLSX.utils.encode_cell({ r: dataRow, c: colIdx })] = {
+                                v: ans,
+                                t: 's',
+                                s: { alignment: { wrapText: true, vertical: 'top' } }
+                            };
+                        });
+
+                        // Image column
+                        const imageColIdx = headers.length - 1;
+                        ws[XLSX.utils.encode_cell({ r: dataRow, c: imageColIdx })] = {
+                            v: r.image ? "有圖片數據 (Base64)" : "",
+                            t: 's',
+                            s: { alignment: { wrapText: true, vertical: 'top' } }
+                        };
+                    });
+
+                    // 5. Set column widths for better readability
+                    ws['!cols'] = headers.map((h, idx) => {
+                        if (idx === 0) return { wch: 20 }; // 回應時間
+                        if (idx === 1) return { wch: 15 }; // 回應ID
+                        if (idx === headers.length - 1) return { wch: 15 }; // 圖片
+                        return { wch: 40 }; // 問題欄位 - increased width for multiline content
+                    });
+
+                    // Set row heights to auto to accommodate multiline content
+                    ws['!rows'] = Array(responses.length + 1).fill({ hpt: 15, hpx: 15 });
+
+                    // 6. Add sheet to workbook
+                    XLSX.utils.book_append_sheet(wb, ws, "問卷結果");
+
+                    // 7. Write file with cellStyles option
+                    XLSX.writeFile(wb, `${survey.title}_Report.xlsx`, {
+                        cellStyles: true,
+                        bookType: 'xlsx'
+                    });
+                },
+
+                toggleResponse: (idx) => {
+                    // Toggle visibility of collapsed Q&A items
+                    const collapsedItems = document.querySelectorAll(`.collapsed-qa-${idx}`);
+                    const toggleBtn = document.getElementById(`toggle-btn-${idx}`);
+
+                    if (!toggleBtn) return;
+
+                    const isCurrentlyCollapsed = collapsedItems[0]?.classList.contains('hidden');
+
+                    if (isCurrentlyCollapsed) {
+                        // Expand: show all items
+                        collapsedItems.forEach(item => item.classList.remove('hidden'));
+                        toggleBtn.innerHTML = `
+                            <i class="fas fa-chevron-up"></i>
+                            <span>收合</span>
+                        `;
+                    } else {
+                        // Collapse: hide items beyond first 2
+                        collapsedItems.forEach(item => item.classList.add('hidden'));
+                        toggleBtn.innerHTML = `
+                            <i class="fas fa-chevron-down"></i>
+                            <span>展開更多 (還有 ${collapsedItems.length} 題)</span>
+                        `;
+                    }
+                },
+
+                downloadIndividualPDF: (idx) => {
+                    const data = app.state.currentReport;
+                    // 修正資料提取:處理可能的巢狀結構
+                    const responses = data.responses || data.data?.responses || [];
+                    const survey = data.survey || data.data?.survey;
+                    const r = responses[idx];
+
+                    if (!r || !survey) {
+                        console.error("Missing data for PDF generation", { r, survey, data });
+                        app.ui.showModal("錯誤", "無法載入回應資料", "error");
+                        return;
+                    }
+
+                    const tempDiv = document.createElement('div');
+                    tempDiv.style.width = '700px';
+                    tempDiv.style.padding = '40px';
+                    tempDiv.style.background = '#fff';
+                    tempDiv.style.fontFamily = "'Noto Sans TC', sans-serif";
+                    // Safer hiding method
+                    tempDiv.style.position = 'fixed';
+                    tempDiv.style.left = '-9999px';
+                    tempDiv.style.top = '0px';
+                    tempDiv.style.zIndex = '-1000';
+
+                    let timeStr = r.timestamp || "-";
+                    // Ensure string
+                    if (typeof timeStr !== 'string') timeStr = String(timeStr);
+
+                    let html = `
+                        <div style="margin-bottom: 30px;">
+                            <h1 style="font-size: 24px; font-weight: bold; margin-bottom: 10px;">${survey.title} - 個案報告</h1>
+                            <p style="color: #666; margin-bottom: 20px;">回應時間: ${timeStr}</p>
+                            <hr style="border: 0; border-top: 1px solid #ddd;">
+                        </div>
+                    `;
+
+                    for (const [key, value] of Object.entries(r.answers)) {
+                        // Handle multiline in individual PDF too
+                        // const displayValue = String(value).replace(/\n/g, '<br>');
+                        html += `
+                            <div style="margin-bottom: 20px;">
+                                <p style="font-weight: bold; font-size: 14px; color: #333; margin-bottom: 8px; line-height: 1.4;">Q: ${key}</p>
+                                <p style="font-size: 14px; color: #555; background: #f9f9f9; padding: 12px; border-radius: 4px; white-space: pre-wrap; line-height: 1.6; margin-top: 0;">${value || '(未填答)'}</p>
+                            </div>
+                        `;
+                    }
+
+                    if (r.image) {
+                        html += `<div style="margin-top:30px;">
+                            <p style="font-weight: bold; margin-bottom: 10px;">附件圖片:</p>
+                            <img src="${r.image}" style="max-width: 100%; border: 1px solid #ddd;">
+                        </div>`;
+                    }
+
+                    tempDiv.innerHTML = html;
+                    document.body.appendChild(tempDiv);
+
+                    // Allow time for images to render if needed, but since base64, usually instant.
+                    // useCORS true is good practice.
+                    html2canvas(tempDiv, { scale: 2, useCORS: true }).then(canvas => {
+                        // Check validity
+                        if (canvas.width === 0 || canvas.height === 0) {
+                            document.body.removeChild(tempDiv);
+                            return app.ui.showModal("錯誤", "無法生成 PDF (畫布寬度為0)，請重試。", "error");
+                        }
+
+                        try {
+                            const imgData = canvas.toDataURL('image/jpeg', 0.9);
+                            const pdf = new jspdf.jsPDF('p', 'mm', 'a4');
+
+                            // PDF page dimensions
+                            const margin = 5;
+                            const pdfWidth = pdf.internal.pageSize.getWidth();
+                            const pdfHeight = pdf.internal.pageSize.getHeight();
+                            const contentWidth = pdfWidth - (margin * 2);
+                            const contentHeight = pdfHeight - 20;
+
+                            // Calculate image dimensions
+                            const imgWidth = contentWidth;
+                            const imgHeight = (canvas.height * contentWidth) / canvas.width;
+
+                            // Check if content fits in one page
+                            if (imgHeight <= contentHeight) {
+                                // Single page
+                                pdf.addImage(imgData, 'JPEG', margin, 10, imgWidth, imgHeight);
+                            } else {
+                                // Multi-page
+                                let heightLeft = imgHeight;
+                                let position = 0;
+                                let page = 0;
+
+                                // Add first page
+                                pdf.addImage(imgData, 'JPEG', margin, 10, imgWidth, imgHeight);
+                                heightLeft -= contentHeight;
+
+                                // Add subsequent pages
+                                while (heightLeft > 0) {
+                                    position = -(contentHeight * (page + 1)) + 10;
+                                    pdf.addPage();
+                                    pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight);
+                                    heightLeft -= contentHeight;
+                                    page++;
+                                }
+                            }
+
+                            pdf.save(`Case_Report_${idx + 1}.pdf`);
+                        } catch (e) {
+                            console.error("PDF Gen Error:", e);
+                            app.ui.showModal("錯誤", "PDF 生成失敗: " + e.message, "error");
+                        } finally {
+                            document.body.removeChild(tempDiv);
+                        }
+                    });
+                },
+
+                downloadSummaryPDF: () => {
+                    // Open the PDF options dialog to let user select sections
+                    app.ui.openPdfOptions();
+                },
+
+                // Helper function: Simple pagination by page height
+                generateSimplePaginatedPDF: (canvas, pdf, margin, contentWidth, contentHeight, pxPerMm, pageHeightPx) => {
+                    const imgData = canvas.toDataURL('image/jpeg', 0.9);
+                    const canvasHeight = canvas.height;
+
+                    let heightLeft = canvasHeight;
+                    let position = 0;
+                    let isFirstPage = true;
+
+                    while (heightLeft > 0) {
+                        if (!isFirstPage) {
+                            pdf.addPage();
+                        }
+
+                        const yOffset = -position;
+                        const imgHeight = (canvasHeight / pxPerMm);
+
+                        pdf.addImage(imgData, 'JPEG', margin, 10 + (yOffset / pxPerMm), contentWidth, imgHeight);
+
+                        heightLeft -= pageHeightPx;
+                        position += pageHeightPx;
+                        isFirstPage = false;
+                    }
+                },
+
+                // Helper function: Smart pagination to avoid splitting response blocks
+                generateSmartPaginatedPDF: async (tempDiv, pdf, margin, contentWidth, contentHeight, pxPerMm, pageHeightPx) => {
+                    // Strategy: Render sections separately and intelligently place them
+                    let currentY = 10; // Starting Y position in mm
+                    let isFirstPage = true;
+
+                    // Process all top-level children of tempDiv
+                    const children = Array.from(tempDiv.children);
+
+                    for (const child of children) {
+                        // Check if this is a response container
+                        const isResponseContainer = child.querySelector('.pdf-response-block') !== null;
+
+                        if (isResponseContainer) {
+                            // This contains response blocks
+                            const responseBlocks = child.querySelectorAll('.pdf-response-block');
+
+                            // Add section title if exists
+                            const sectionTitle = child.querySelector('h2');
+                            if (sectionTitle && currentY > 10) {
+                                // Check if title fits in current page
+                                const titleHeight = 15; // Approximate height for title
+                                if (currentY + titleHeight > contentHeight + 5) {
+                                    pdf.addPage();
+                                    currentY = 10;
+                                }
+
+                                // Render title
+                                const titleCanvas = await html2canvas(sectionTitle, {
+                                    scale: 2,
+                                    useCORS: true,
+                                    logging: false,
+                                    backgroundColor: '#ffffff'
+                                });
+
+                                const titleHeightMm = (titleCanvas.height / pxPerMm);
+                                const titleImgData = titleCanvas.toDataURL('image/jpeg', 0.9);
+                                pdf.addImage(titleImgData, 'JPEG', margin, currentY, contentWidth, titleHeightMm);
+                                currentY += titleHeightMm + 2;
+                            }
+
+                            // Check if this is a two-column layout
+                            const gridContainer = child.querySelector('div[style*="grid-template-columns"]');
+                            const isTwoColumn = gridContainer && gridContainer.style.gridTemplateColumns.includes('repeat(2');
+
+                            if (isTwoColumn) {
+                                // Two-column layout: process pairs of blocks as rows
+                                const responseArray = Array.from(responseBlocks);
+
+                                for (let i = 0; i < responseArray.length; i += 2) {
+                                    // Get one or two blocks (last row might have only one)
+                                    const row = responseArray.slice(i, i + 2);
+
+                                    // Create a temporary container for this row
+                                    const rowDiv = document.createElement('div');
+                                    rowDiv.style.display = 'grid';
+                                    rowDiv.style.gridTemplateColumns = 'repeat(2, 1fr)';
+                                    rowDiv.style.gap = '16px';
+                                    rowDiv.style.width = tempDiv.style.width;
+                                    rowDiv.style.background = '#fff';
+
+                                    // Clone the blocks into the row
+                                    row.forEach(block => {
+                                        rowDiv.appendChild(block.cloneNode(true));
+                                    });
+
+                                    document.body.appendChild(rowDiv);
+
+                                    // Render the row
+                                    const rowCanvas = await html2canvas(rowDiv, {
+                                        scale: 2,
+                                        useCORS: true,
+                                        logging: false,
+                                        backgroundColor: '#ffffff'
+                                    });
+
+                                    document.body.removeChild(rowDiv);
+
+                                    const rowHeightMm = (rowCanvas.height / pxPerMm);
+
+                                    // Check if row fits in current page
+                                    if (currentY + rowHeightMm > contentHeight + 5) {
+                                        // Move to next page
+                                        pdf.addPage();
+                                        currentY = 10;
+                                    }
+
+                                    // Add row to PDF
+                                    const rowImgData = rowCanvas.toDataURL('image/jpeg', 0.9);
+                                    pdf.addImage(rowImgData, 'JPEG', margin, currentY, contentWidth, rowHeightMm);
+                                    currentY += rowHeightMm + 3; // 3mm gap between rows
+                                }
+                            } else {
+                                // Single-column layout: process each block separately
+                                for (const block of responseBlocks) {
+                                    const blockCanvas = await html2canvas(block, {
+                                        scale: 2,
+                                        useCORS: true,
+                                        logging: false,
+                                        backgroundColor: '#f8fafc'
+                                    });
+
+                                    const blockHeightMm = (blockCanvas.height / pxPerMm);
+
+                                    // Check if block fits in current page
+                                    if (currentY + blockHeightMm > contentHeight + 5) {
+                                        // Move to next page
+                                        pdf.addPage();
+                                        currentY = 10;
+                                    }
+
+                                    // Add block to PDF
+                                    const blockImgData = blockCanvas.toDataURL('image/jpeg', 0.9);
+                                    pdf.addImage(blockImgData, 'JPEG', margin, currentY, contentWidth, blockHeightMm);
+                                    currentY += blockHeightMm + 3; // 3mm gap between blocks
+                                }
+                            }
+                        } else {
+                            // Regular section - render as is
+                            const sectionCanvas = await html2canvas(child, {
+                                scale: 2,
+                                useCORS: true,
+                                logging: false,
+                                backgroundColor: '#ffffff'
+                            });
+
+                            const sectionHeightMm = (sectionCanvas.height / pxPerMm);
+
+                            // Check if section fits in current page
+                            if (currentY + sectionHeightMm > contentHeight + 5) {
+                                pdf.addPage();
+                                currentY = 10;
+                            }
+
+                            // Add section to PDF
+                            const sectionImgData = sectionCanvas.toDataURL('image/jpeg', 0.9);
+                            pdf.addImage(sectionImgData, 'JPEG', margin, currentY, contentWidth, sectionHeightMm);
+                            currentY += sectionHeightMm + 5; // 5mm gap after major sections
+                        }
+                    }
+                },
+
+                generateCustomPDF: () => {
+                    // Get selected options
+                    const includeHeader = document.getElementById('pdf-option-header').checked;
+                    const includeStats = document.getElementById('pdf-option-stats').checked;
+                    const includeResponses = document.getElementById('pdf-option-responses').checked;
+                    const includeCharts = document.getElementById('pdf-option-charts').checked;
+
+                    // Get layout option
+                    const layoutSingle = document.getElementById('pdf-layout-single').checked;
+                    const layoutDouble = document.getElementById('pdf-layout-double').checked;
+                    const useDoubleColumn = layoutDouble;
+
+                    // Close the modal
+                    app.ui.closePdfOptions();
+
+                    // Check if at least one option is selected
+                    if (!includeHeader && !includeStats && !includeResponses && !includeCharts) {
+                        return app.ui.showModal("提示", "請至少選擇一個區塊", "info");
+                    }
+
+                    // Create a temporary container with selected sections
+                    const tempDiv = document.createElement('div');
+                    tempDiv.style.width = '1000px';
+                    tempDiv.style.padding = '40px';
+                    tempDiv.style.background = '#fff';
+                    tempDiv.style.fontFamily = "'Noto Sans TC', sans-serif";
+                    tempDiv.style.position = 'fixed';
+                    tempDiv.style.left = '-9999px';
+                    tempDiv.style.top = '0px';
+                    tempDiv.style.zIndex = '-1000';
+
+                    // Get the original report content
+                    const reportContent = document.getElementById('report-content');
+                    if (!reportContent) {
+                        return app.ui.showModal("錯誤", "無法找到報告內容", "error");
+                    }
+
+                    // Build HTML based on selections
+                    let html = '';
+
+                    // Header section
+                    if (includeHeader) {
+                        const title = document.getElementById('report-title')?.innerText || '問卷報告';
+                        const meta = document.getElementById('report-meta')?.innerText || '';
+                        html += `
+                            <div style="margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #ddd;">
+                                <h1 style="font-size: 28px; font-weight: bold; color: #1e293b; margin-bottom: 8px;">${title}</h1>
+                                <p style="color: #64748b; font-size: 14px;">${meta}</p>
+                            </div>
+                        `;
+                    }
+
+                    // Stats overview section
+                    if (includeStats) {
+                        const statsOverview = document.getElementById('stats-overview');
+                        if (statsOverview && statsOverview.children.length > 0) {
+                            html += `
+                                <div style="margin-bottom: 30px;">
+                                    <h2 style="font-size: 20px; font-weight: bold; color: #1e293b; margin-bottom: 16px;">統計概覽</h2>
+                                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
+                            `;
+                            Array.from(statsOverview.children).forEach(stat => {
+                                const label = stat.querySelector('.text-gray-600')?.innerText || '';
+                                const value = stat.querySelector('.text-3xl')?.innerText || '';
+                                html += `
+                                    <div style="background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                                        <div style="color: #64748b; font-size: 13px; margin-bottom: 8px;">${label}</div>
+                                        <div style="font-size: 28px; font-weight: bold; color: #1e293b;">${value}</div>
+                                    </div>
+                                `;
+                            });
+                            html += `
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    }
+
+                    // Responses list section - Show full Q&A for each response
+                    if (includeResponses) {
+                        const data = app.state.currentReport;
+                        const responses = data?.responses || [];
+                        const survey = data?.survey;
+
+                        if (responses.length > 0 && survey) {
+                            html += `
+                                <div style="margin-bottom: 30px;">
+                                    <h2 style="font-size: 20px; font-weight: bold; color: #1e293b; margin-bottom: 16px;">回應內容</h2>
+                            `;
+
+                            if (useDoubleColumn) {
+                                // Two-column layout
+                                html += `<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">`;
+
+                                responses.forEach((r, idx) => {
+                                    let timeStr = r.timestamp || "-";
+                                    if (typeof timeStr !== 'string') timeStr = String(timeStr);
+
+                                    html += `
+                                        <div class="pdf-response-block" data-response-idx="${idx}" style="background: #f8fafc; padding: 16px; margin-bottom: 0; border-radius: 6px; border: 1px solid #e2e8f0; page-break-inside: avoid; break-inside: avoid;">
+                                            <div style="margin-bottom: 12px; padding-bottom: 10px; border-bottom: 2px solid #cbd5e1;">
+                                                <div style="font-weight: 600; color: #1e293b; font-size: 12px;">回應 #${idx + 1}</div>
+                                                <div style="color: #64748b; font-size: 10px; margin-top: 4px;">時間: ${timeStr}</div>
+                                            </div>
+                                    `;
+
+                                    // Display all questions and answers
+                                    if (r.answers && typeof r.answers === 'object') {
+                                        for (const [question, answer] of Object.entries(r.answers)) {
+                                            const displayAnswer = String(answer || '(未填答)').replace(/\n/g, '<br>');
+                                            html += `
+                                                <div style="margin-bottom: 10px;">
+                                                    <div style="font-weight: 600; color: #334155; font-size: 10px; margin-bottom: 4px;">Q: ${question}</div>
+                                                    <div style="color: #475569; font-size: 10px; background: #ffffff; padding: 8px; border-radius: 4px; line-height: 1.5;">${displayAnswer}</div>
+                                                </div>
+                                            `;
+                                        }
+                                    }
+
+                                    // Include image if present (smaller in two-column layout)
+                                    if (r.image) {
+                                        html += `
+                                            <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #e2e8f0;">
+                                                <div style="font-weight: 600; color: #334155; font-size: 10px; margin-bottom: 6px;">附件圖片:</div>
+                                                <img src="${r.image}" style="max-width: 100%; height: auto; border: 1px solid #cbd5e1; border-radius: 4px;">
+                                            </div>
+                                        `;
+                                    }
+
+                                    html += `</div>`;
+                                });
+
+                                html += `</div>`;
+                            } else {
+                                // Single-column layout (original)
+                                responses.forEach((r, idx) => {
+                                    let timeStr = r.timestamp || "-";
+                                    if (typeof timeStr !== 'string') timeStr = String(timeStr);
+
+                                    html += `
+                                        <div class="pdf-response-block" data-response-idx="${idx}" style="background: #f8fafc; padding: 20px; margin-bottom: 20px; border-radius: 8px; border: 1px solid #e2e8f0; page-break-inside: avoid; break-inside: avoid;">
+                                            <div style="margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #cbd5e1;">
+                                                <div style="font-weight: 600; color: #1e293b; font-size: 14px;">回應 #${idx + 1}</div>
+                                                <div style="color: #64748b; font-size: 12px; margin-top: 4px;">時間: ${timeStr}</div>
+                                            </div>
+                                    `;
+
+                                    // Display all questions and answers
+                                    if (r.answers && typeof r.answers === 'object') {
+                                        for (const [question, answer] of Object.entries(r.answers)) {
+                                            const displayAnswer = String(answer || '(未填答)').replace(/\n/g, '<br>');
+                                            html += `
+                                                <div style="margin-bottom: 14px;">
+                                                    <div style="font-weight: 600; color: #334155; font-size: 12px; margin-bottom: 6px;">Q: ${question}</div>
+                                                    <div style="color: #475569; font-size: 12px; background: #ffffff; padding: 10px; border-radius: 4px; line-height: 1.6;">${displayAnswer}</div>
+                                                </div>
+                                            `;
+                                        }
+                                    }
+
+                                    // Include image if present
+                                    if (r.image) {
+                                        html += `
+                                            <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #e2e8f0;">
+                                                <div style="font-weight: 600; color: #334155; font-size: 12px; margin-bottom: 8px;">附件圖片:</div>
+                                                <img src="${r.image}" style="max-width: 100%; height: auto; border: 1px solid #cbd5e1; border-radius: 4px;">
+                                            </div>
+                                        `;
+                                    }
+
+                                    html += `</div>`;
+                                });
+                            }
+
+                            html += `</div>`;
+                        }
+                    }
+
+                    // Charts section
+                    if (includeCharts) {
+                        const chartsContainer = document.getElementById('charts-container');
+                        if (chartsContainer && chartsContainer.children.length > 0) {
+                            html += `
+                                <div style="margin-bottom: 30px;">
+                                    <h2 style="font-size: 20px; font-weight: bold; color: #1e293b; margin-bottom: 16px;">統計圖表</h2>
+                                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+                            `;
+                            Array.from(chartsContainer.children).forEach(chartDiv => {
+                                const canvas = chartDiv.querySelector('canvas');
+                                if (canvas) {
+                                    const imgData = canvas.toDataURL('image/png');
+                                    const title = chartDiv.querySelector('h3')?.innerText || '';
+                                    html += `
+                                        <div style="background: #fff; padding: 16px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                                            <h3 style="font-size: 14px; font-weight: 600; color: #334155; margin-bottom: 12px;">${title}</h3>
+                                            <img src="${imgData}" style="width: 100%; height: auto;">
+                                        </div>
+                                    `;
+                                }
+                            });
+                            html += `
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    }
+
+                    tempDiv.innerHTML = html;
+                    document.body.appendChild(tempDiv);
+
+                    // Generate PDF with intelligent multi-page support
+                    setTimeout(async () => {
+                        try {
+                            const pdf = new jspdf.jsPDF('p', 'mm', 'a4');
+
+                            // PDF page dimensions (in mm)
+                            const margin = 5;
+                            const pdfWidth = pdf.internal.pageSize.getWidth();
+                            const pdfHeight = pdf.internal.pageSize.getHeight();
+                            const contentWidth = pdfWidth - (margin * 2);
+                            const contentHeight = pdfHeight - 15; // Top and bottom margin
+
+                            // Check if we have response blocks to avoid splitting
+                            const responseBlocks = tempDiv.querySelectorAll('.pdf-response-block');
+
+                            if (includeResponses && responseBlocks.length > 0) {
+                                // Smart pagination: render a small section to calculate pixel-to-mm ratio
+                                const testDiv = document.createElement('div');
+                                testDiv.style.width = tempDiv.style.width;
+                                testDiv.style.height = '100px';
+                                testDiv.style.background = '#fff';
+                                document.body.appendChild(testDiv);
+
+                                const testCanvas = await html2canvas(testDiv, { scale: 2, logging: false });
+                                const pxPerMm = testCanvas.width / contentWidth;
+                                document.body.removeChild(testDiv);
+
+                                // Smart pagination: render each section separately to avoid splitting responses
+                                await app.report.generateSmartPaginatedPDF(tempDiv, pdf, margin, contentWidth, contentHeight, pxPerMm, 0);
+                            } else {
+                                // Simple case: render entire content
+                                const canvas = await html2canvas(tempDiv, { scale: 2, useCORS: true, logging: false });
+
+                                if (canvas.width === 0 || canvas.height === 0) {
+                                    document.body.removeChild(tempDiv);
+                                    return app.ui.showModal("錯誤", "無法生成 PDF，請重試", "error");
+                                }
+
+                                const canvasWidth = canvas.width;
+                                const canvasHeight = canvas.height;
+                                const pxPerMm = canvasWidth / contentWidth;
+                                const pageHeightPx = contentHeight * pxPerMm;
+
+                                if (canvasHeight <= pageHeightPx) {
+                                    // Single page
+                                    const imgData = canvas.toDataURL('image/jpeg', 0.9);
+                                    const imgHeight = (canvasHeight / pxPerMm);
+                                    pdf.addImage(imgData, 'JPEG', margin, 10, contentWidth, imgHeight);
+                                } else {
+                                    // Multi-page simple split
+                                    app.report.generateSimplePaginatedPDF(canvas, pdf, margin, contentWidth, contentHeight, pxPerMm, pageHeightPx);
+                                }
+                            }
+
+                            pdf.save('Custom_Summary_Report.pdf');
+                            app.ui.showModal("成功", "PDF 已下載", "success");
+                        } catch (e) {
+                            console.error("PDF Gen Error:", e);
+                            app.ui.showModal("錯誤", "PDF 生成失敗: " + e.message, "error");
+                        } finally {
+                            document.body.removeChild(tempDiv);
+                        }
+                    }, 100);
+                }
+            },
+
+            // --- 8. Utils ---
+            utils: {
+                apiCall: async (data) => {
+                    try {
+                        const response = await fetch(app.state.gasUrl, {
+                            method: "POST",
+                            headers: { "Content-Type": "text/plain;charset=utf-8" },
+                            body: JSON.stringify(data)
+                        });
+                        return await response.json();
+                    } catch (e) {
+                        console.error("API Fail:", e);
+                        return { status: "error", message: "無法連接到伺服器，請檢查 URL 設定或網路。" };
+                    }
+                },
+
+                copyCode: () => {
+                    const el = document.getElementById('gas-code-block');
+                    const range = document.createRange();
+                    range.selectNode(el);
+                    window.getSelection().removeAllRanges();
+                    window.getSelection().addRange(range);
+                    document.execCommand('copy');
+                    app.ui.showModal("已複製", "程式碼已複製到剪貼簿", "success");
+                },
+
+                copyShareUrl: () => {
+                    const input = document.getElementById('share-url-input');
+                    input.select();
+                    document.execCommand('copy');
+                    app.ui.showModal("已複製", "問卷連結已複製到剪貼簿", "success");
+                },
+
+                compressImage: (file) => {
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.readAsDataURL(file);
+                        reader.onload = (event) => {
+                            const img = new Image();
+                            img.src = event.target.result;
+                            img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                const MAX_WIDTH = 800;
+                                let width = img.width;
+                                let height = img.height;
+
+                                if (width > MAX_WIDTH) {
+                                    height *= MAX_WIDTH / width;
+                                    width = MAX_WIDTH;
+                                }
+
+                                canvas.width = width;
+                                canvas.height = height;
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(img, 0, 0, width, height);
+                                resolve(canvas.toDataURL('image/jpeg', 0.6));
+                            };
+                            img.onerror = (e) => reject(e);
+                        };
+                        reader.onerror = (e) => reject(e);
+                    });
+                },
+
+                generateId: () => {
+                    // 4-char Alphanumeric
+                    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                    let result = '';
+                    for (let i = 0; i < 4; i++) {
+                        result += chars.charAt(Math.floor(Math.random() * chars.length));
+                    }
+                    return result;
+                }
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('gas-code-block').innerText = GAS_CODE_TEMPLATE;
+            app.init();
+        });
+
+    </script>
+</body>
+
+</html>
