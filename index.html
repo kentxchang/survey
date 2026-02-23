@@ -530,10 +530,20 @@
         <div class="max-w-5xl mx-auto">
             <div class="flex justify-between items-center mb-6">
                 <h2 class="text-2xl font-bold text-slate-800">問卷管理後台</h2>
-                <button onclick="app.router('create')"
-                    class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 shadow text-sm">
-                    <i class="fas fa-plus mr-2"></i>建立新問卷
-                </button>
+                <div class="flex gap-2">
+                    <button id="apply-status-btn" onclick="app.ctrl.applyStatusChanges()"
+                        class="hidden bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600 shadow text-sm font-bold animate-pulse">
+                        <i class="fas fa-save mr-2"></i>套用狀態變更 (<span id="pending-count">0</span>)
+                    </button>
+                    <button onclick="app.router('create')"
+                        class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 shadow text-sm">
+                        <i class="fas fa-plus mr-2"></i>建立新問卷
+                    </button>
+                </div>
+            </div>
+
+            <div id="status-change-notice" class="hidden bg-orange-50 border-l-4 border-orange-400 p-3 mb-4 text-orange-700 text-sm">
+                <i class="fas fa-exclamation-circle mr-2"></i>您有尚未儲存的狀態變更，請點擊右上方「套用狀態變更」按鈕。
             </div>
 
             <div class="bg-white rounded shadow overflow-hidden">
@@ -793,6 +803,7 @@ function doPost(e) {
       case "save_survey": result = saveSurvey(data.payload); break;
       case "get_survey": result = getSurvey(data.surveyId); break;
       case "update_survey_status": result = updateSurveyStatus(data.surveyId, data.status); break;
+      case "batch_update_status": result = batchUpdateStatus(data.changes); break;
       case "submit_response": result = submitResponse(data.payload); break;
       case "get_report_data": result = getReportData(data.surveyId); break;
       case "get_all_surveys": result = getAllSurveys(); break;
@@ -869,6 +880,25 @@ function updateSurveyStatus(surveyId, newStatus) {
     }
   }
   return { status: "error", message: "找不到該問卷" };
+}
+
+function batchUpdateStatus(changes) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(DB_CONFIG.surveys.sheetName);
+  const data = sheet.getDataRange().getValues();
+  let updatedCount = 0;
+
+  for (const id in changes) {
+    const newStatus = changes[id];
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] == id) {
+        sheet.getRange(i + 1, 5).setValue(newStatus);
+        updatedCount++;
+        break;
+      }
+    }
+  }
+  return { status: "success", message: "成功更新 " + updatedCount + " 筆問卷狀態" };
 }
 
 function getSurvey(surveyId) {
@@ -1050,7 +1080,8 @@ function responseJSON(data) {
                 currentReport: null,
                 editId: null, // Store ID when editing
                 isAdmin: false, // Login state
-                loginRedirect: null // Where to go after login
+                loginRedirect: null, // Where to go after login
+                pendingStatusChanges: {} // NEW: Track unapplied status changes
             },
 
             // --- 1. Initialization & Configuration ---
@@ -1727,6 +1758,13 @@ type 只能是: text, textarea, single, multi, image, display_image。`;
                 loadManageList: async () => {
                     if (!app.state.gasUrl) return app.ui.showModal("錯誤", "未設定 GAS URL", "error");
 
+                    // Reset pending changes when reloading list
+                    app.state.pendingStatusChanges = {};
+                    const applyBtn = document.getElementById('apply-status-btn');
+                    if (applyBtn) applyBtn.classList.add('hidden');
+                    const notice = document.getElementById('status-change-notice');
+                    if (notice) notice.classList.add('hidden');
+
                     const tbody = document.getElementById('manage-list-body');
                     const emptyMsg = document.getElementById('manage-empty');
                     tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><div class="loader mx-auto"></div></td></tr>';
@@ -1747,19 +1785,10 @@ type 只能是: text, textarea, single, multi, image, display_image。`;
                                     else if (s.createdAt instanceof Date) dateStr = s.createdAt.toLocaleDateString();
                                 }
 
-                                // Status Logic (3 States)
-                                let toggleColor, statusText;
-                                if (s.status === 'published') {
-                                    toggleColor = 'bg-green-500 hover:bg-green-600';
-                                    statusText = '接收中 (公開)';
-                                } else if (s.status === 'private') {
-                                    toggleColor = 'bg-orange-400 hover:bg-orange-500';
-                                    statusText = '接收中 (不公開)';
-                                } else {
-                                    // Default to hidden/closed
-                                    toggleColor = 'bg-red-500 hover:bg-red-600';
-                                    statusText = '已停止';
-                                }
+                                // Status Dropdown Colors & Logic
+                                let statusClass = "bg-red-50 text-red-600 border-red-200";
+                                if (s.status === 'published') statusClass = "bg-green-50 text-green-600 border-green-200";
+                                else if (s.status === 'private') statusClass = "bg-orange-50 text-orange-600 border-orange-200";
 
                                 // Format limits info
                                 let limitsHtml = '<span class="text-gray-400 text-xs">無限制</span>';
@@ -1789,9 +1818,12 @@ type 只能是: text, textarea, single, multi, image, display_image。`;
                                     <td class="px-6 py-4 text-xs text-gray-500">${dateStr}</td>
                                     <td class="px-6 py-4">${limitsHtml}</td>
                                     <td class="px-6 py-4">
-                                        <button onclick="app.ctrl.toggleStatus('${s.id}', '${s.status}')" class="${toggleColor} text-white text-xs font-bold px-2 py-1 rounded transition w-32 text-center shadow-sm whitespace-nowrap">
-                                            ${statusText}
-                                        </button>
+                                        <select onchange="app.ctrl.handleStatusChange('${s.id}', this, '${s.status}')" 
+                                            class="status-select ${statusClass} border rounded text-xs font-bold px-2 py-1 outline-none transition w-32 shadow-sm cursor-pointer">
+                                            <option value="published" ${s.status === 'published' ? 'selected' : ''}>接收中 (公開)</option>
+                                            <option value="private" ${s.status === 'private' ? 'selected' : ''}>接收中 (不公開)</option>
+                                            <option value="hidden" ${s.status === 'hidden' ? 'selected' : ''}>已停止</option>
+                                        </select>
                                     </td>
                                     <td class="px-6 py-4">
                                         <div class="flex items-center justify-end gap-3">
@@ -1826,31 +1858,61 @@ type 只能是: text, textarea, single, multi, image, display_image。`;
                     }
                 },
 
-                toggleStatus: async (id, currentStatus) => {
-                    let newStatus;
-                    // Cycle: published -> private -> hidden -> published
-                    if (currentStatus === 'published') newStatus = 'private';
-                    else if (currentStatus === 'private') newStatus = 'hidden';
-                    else newStatus = 'published';
+                handleStatusChange: (id, selectEl, originalStatus) => {
+                    const newStatus = selectEl.value;
+                    
+                    // Update dropdown color dynamically
+                    selectEl.classList.remove('bg-green-50', 'text-green-600', 'border-green-200', 'bg-orange-50', 'text-orange-600', 'border-orange-200', 'bg-red-50', 'text-red-600', 'border-red-200');
+                    if (newStatus === 'published') selectEl.classList.add('bg-green-50', 'text-green-600', 'border-green-200');
+                    else if (newStatus === 'private') selectEl.classList.add('bg-orange-50', 'text-orange-600', 'border-orange-200');
+                    else selectEl.classList.add('bg-red-50', 'text-red-600', 'border-red-200');
 
-                    const btn = event.target;
-                    const originalText = btn.innerText;
-                    btn.innerText = "...";
+                    if (newStatus === originalStatus) {
+                        delete app.state.pendingStatusChanges[id];
+                        selectEl.classList.remove('ring-2', 'ring-orange-400');
+                    } else {
+                        app.state.pendingStatusChanges[id] = newStatus;
+                        selectEl.classList.add('ring-2', 'ring-orange-400'); // Highlight changed
+                    }
 
-                    app.ui.showLoading('切換狀態中...');
+                    // Update UI Button
+                    const count = Object.keys(app.state.pendingStatusChanges).length;
+                    const applyBtn = document.getElementById('apply-status-btn');
+                    const notice = document.getElementById('status-change-notice');
+                    const countSpan = document.getElementById('pending-count');
+
+                    if (count > 0) {
+                        applyBtn.classList.remove('hidden');
+                        if (notice) notice.classList.remove('hidden');
+                        if (countSpan) countSpan.innerText = count;
+                    } else {
+                        applyBtn.classList.add('hidden');
+                        if (notice) notice.classList.add('hidden');
+                    }
+                },
+
+                applyStatusChanges: async () => {
+                    const count = Object.keys(app.state.pendingStatusChanges).length;
+                    if (count === 0) return;
+
+                    app.ui.showLoading(`正在套用 ${count} 筆狀態變更...`);
                     const res = await app.utils.apiCall({
-                        action: 'update_survey_status',
-                        surveyId: id,
-                        status: newStatus
+                        action: 'batch_update_status',
+                        changes: app.state.pendingStatusChanges
                     });
                     app.ui.hideLoading();
 
-                    if(res.status === 'success') {
-                        app.ctrl.loadManageList(); // Reload to refresh UI properly
+                    if (res && res.status === 'success') {
+                        app.ui.showModal("成功", res.message, "success");
+                        app.ctrl.loadManageList(); // Reload to refresh everything
                     } else {
-                        btn.innerText = originalText;
-                        app.ui.showModal("錯誤", "更新失敗", "error");
+                        app.ui.showModal("失敗", res ? res.message : "連線錯誤", "error");
                     }
+                },
+
+                toggleStatus: async (id, currentStatus) => {
+                    // This function is kept for backward compatibility if needed elsewhere, 
+                    // but we no longer use it in the main management table.
                 },
 
                 copySurvey: async (id) => {
